@@ -12,7 +12,7 @@ export function isPublicAddress(address) {
     return false;
   }
 }
-function pageURL(value, base) {
+export function pageURL(value, base) {
   const url = new URL(value, base);
   if (url.href.length > 4096) throw new Error('This video link is too long to share.');
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
@@ -262,8 +262,11 @@ async function resolveCandidate(
       /* Try the next actual player rather than unrelated page links. */
     }
   }
-  throw new Error(
-    'No shareable video was found. This site may load its player with JavaScript, require login, or prevent embedding. Try a direct video link or screen share.',
+  throw Object.assign(
+    new Error(
+      'No shareable video was found. This site may load its player with JavaScript, require login, or prevent embedding. Try a direct video link or screen share.',
+    ),
+    { code: 'NO_MEDIA' },
   );
 }
 
@@ -275,7 +278,13 @@ export async function resolveMedia(value) {
   if (activeInspections >= 4) throw new Error('Media lookup is busy. Try again in a moment.');
   activeInspections++;
   try {
-    return await resolveCandidate(url.href);
+    try {
+      return await resolveCandidate(url.href);
+    } catch (error) {
+      if (error.code !== 'NO_MEDIA') throw error;
+      const { resolveBrowserMedia } = await import('./browser-media.js');
+      return await resolveBrowserMedia(url.href);
+    }
   } finally {
     activeInspections--;
   }

@@ -151,7 +151,7 @@ export function useWebRTCSync(
       if (!socket.current?.connected)
         return reject(new Error('The room connection is unavailable.'));
       socket.current
-        .timeout(event === 'queue-add' ? 20000 : 8000)
+        .timeout(event === 'queue-add' ? 45000 : 8000)
         .emit(event, payload, (error: Error | null, response: T & { error?: string }) => {
           if (error) reject(new Error('The room did not respond. Please try again.'));
           else if (response.error) reject(new Error(response.error));
