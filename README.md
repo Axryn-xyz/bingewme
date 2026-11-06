@@ -13,7 +13,9 @@
 
 **Binge W Me** is a no-signup watch-party app for the group chat that actually wants to watch something. Create a room, send your people the link, and bring your own video. Playback, chat, reactions, and live annotations share one space.
 
-Every room starts empty. Every new room gets its own link. The homepage stays a lobby until you choose where to go.
+Every room starts empty. Every new room gets a five-digit code, like **48271**, and a matching `/party/48271` link. Friends can type the code or paste the link on the homepage.
+
+Codes are reserved by the room server so active rooms cannot collide. Copy the code directly from the room header or the invite panel. Unclaimed codes expire after five minutes; rooms close when their last guest leaves. Existing longer invite links remain supported.
 
 [Get started](#run-locally) · [Features](#inside-the-room) · [Deploy](#deploy) · [Current boundaries](#current-boundaries)
 

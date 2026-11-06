@@ -1,23 +1,69 @@
 import { useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Link, MonitorPlay, Plus, Users, Zap } from 'lucide-react';
-import { createRoomCode, parseRoomCode } from '../lib/rooms';
+import { parseRoomCode } from '../lib/rooms';
+import { apiUrl } from '../lib/backend';
 
 export function RoomLobby() {
   const [name, setName] = useState(() => sessionStorage.getItem('party-name') || '');
   const [room, setRoom] = useState('');
   const [error, setError] = useState('');
+  const [pending, setPending] = useState<'create' | 'join' | null>(null);
   function enter(code: string) {
     sessionStorage.setItem('party-name', name.trim().slice(0, 32) || 'Guest');
     window.location.assign(`/party/${code}`);
   }
-  function join(e: React.FormEvent) {
+  async function create() {
+    if (pending) return;
+    setPending('create');
+    setError('');
+    try {
+      const response = await fetch(apiUrl('/api/rooms'), {
+        method: 'POST',
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await response.json();
+      if (!response.ok || !/^\d{5}$/.test(data.code)) {
+        throw new Error(data.error || 'Could not create a room. Please try again.');
+      }
+      enter(data.code);
+    } catch (error) {
+      setError(
+        error instanceof Error && error.message.startsWith('All room codes')
+          ? error.message
+          : 'Could not reach the room service. Please try again in a moment.',
+      );
+      setPending(null);
+    }
+  }
+  async function join(e: React.FormEvent) {
     e.preventDefault();
+    if (pending) return;
     const code = parseRoomCode(room);
     if (!code) {
-      setError('Paste a room link or a code with 3–80 letters, numbers, hyphens, or underscores.');
+      setError('Enter a five-digit room code or paste an invite link.');
       return;
     }
-    enter(code);
+    setPending('join');
+    setError('');
+    try {
+      if (/^\d{5}$/.test(code)) {
+        const response = await fetch(apiUrl(`/api/rooms/${code}`), {
+          signal: AbortSignal.timeout(20000),
+        });
+        if (response.status === 404) {
+          setError('That code is no longer active. Double-check it or ask for a new invite.');
+          setPending(null);
+          return;
+        }
+        if (!response.ok) throw new Error('Room service unavailable');
+        const data = await response.json();
+        if (data.code !== code) throw new Error('Room service unavailable');
+      }
+      enter(code);
+    } catch {
+      setError('Could not reach the room service. Please try again in a moment.');
+      setPending(null);
+    }
   }
   return (
     <div className="app lobby-app">
@@ -85,9 +131,11 @@ export function RoomLobby() {
                 <Plus size={22} />
               </span>
               <h2>Start your own hangout.</h2>
-              <p>A fresh room with a unique link. You choose what plays.</p>
-              <button className="yellow-btn full" onClick={() => enter(createRoomCode())}>
-                <Plus size={17} /> Create new room <ArrowUpRight size={17} />
+              <p>One room. Five digits. Tell your friends and choose what plays.</p>
+              <button className="yellow-btn full" disabled={!!pending} onClick={create}>
+                <Plus size={17} />{' '}
+                {pending === 'create' ? 'Creating your room…' : 'Create new room'}{' '}
+                <ArrowUpRight size={17} />
               </button>
             </div>
             <div className="lobby-or">
@@ -95,14 +143,17 @@ export function RoomLobby() {
             </div>
             <form onSubmit={join}>
               <label className="input-label" htmlFor="room-code">
-                ROOM LINK OR CODE
+                FIVE-DIGIT CODE OR INVITE LINK
               </label>
               <div className="join-room-input">
                 <Link size={16} />
                 <input
                   id="room-code"
                   required
-                  placeholder="Paste a link or room code"
+                  placeholder="12345 or paste an invite link"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
                   value={room}
                   onChange={(e) => {
                     setRoom(e.target.value);
@@ -111,7 +162,7 @@ export function RoomLobby() {
                   aria-describedby={error ? 'join-error' : undefined}
                   aria-invalid={!!error}
                 />
-                <button type="submit" title="Join room">
+                <button type="submit" title="Join room" disabled={!!pending}>
                   <ArrowRight size={20} />
                 </button>
               </div>
@@ -120,8 +171,9 @@ export function RoomLobby() {
                   {error}
                 </p>
               )}
-              <button className="outline-btn full lobby-join" type="submit">
-                <Users size={16} /> Join room <ArrowRight size={15} />
+              <button className="outline-btn full lobby-join" type="submit" disabled={!!pending}>
+                <Users size={16} /> {pending === 'join' ? 'Finding your room…' : 'Join room'}{' '}
+                <ArrowRight size={15} />
               </button>
             </form>
           </div>

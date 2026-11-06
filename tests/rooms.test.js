@@ -37,22 +37,46 @@ test('room chat, playback, host lock, resync and majority vote', async () => {
       headers: { Origin: 'https://unrelated.example' },
     });
     assert.equal(deniedOrigin.headers.get('access-control-allow-origin'), null);
-    async function join(name, room = 'integration-test') {
+    const created = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        fetch('http://localhost:3002/api/rooms', {
+          method: 'POST',
+          headers: { Origin: 'https://binge.axryn.xyz' },
+        }),
+      ),
+    );
+    for (const response of created) {
+      assert.equal(response.status, 201);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+    }
+    const [{ code }, { code: otherCode }] = await Promise.all(
+      created.map((response) => response.json()),
+    );
+    assert.match(code, /^[1-9]\d{4}$/);
+    assert.notEqual(code, otherCode);
+    const found = await fetch(`http://localhost:3002/api/rooms/${code}`);
+    assert.equal(found.status, 200);
+    assert.deepEqual(await found.json(), { code });
+    assert.equal((await fetch('http://localhost:3002/api/rooms/00000')).status, 404);
+    const missing = io('http://localhost:3002', { transports: ['websocket'] });
+    clients.push(missing);
+    await event(missing, 'connect');
+    const rejected = event(missing, 'room-error');
+    missing.emit('join', { room: '00000', name: 'Guest' });
+    assert.match(await rejected, /no longer active/);
+    async function join(name, room = code) {
       const socket = io('http://localhost:3002', { transports: ['websocket'] });
       clients.push(socket);
       await event(socket, 'connect');
       const joined = event(socket, 'members');
       socket.emit('join', { room, name });
       const membership = await joined;
-      assert.equal(
-        membership.members.length,
-        room === 'different-room' ? 1 : name === 'Host' ? 1 : 2,
-      );
+      assert.equal(membership.members.length, room === otherCode ? 1 : name === 'Host' ? 1 : 2);
       return socket;
     }
     const host = await join('Host');
     const guest = await join('Guest');
-    const otherHost = await join('Other host', 'different-room');
+    const otherHost = await join('Other host', otherCode);
     const leaked = [];
     otherHost.on('chat', (m) => leaked.push(m));
     otherHost.on('sync', (m) => leaked.push(m));

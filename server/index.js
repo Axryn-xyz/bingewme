@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
+import { allocateRoomCode, createRoomState } from './room-codes.js';
 const app = express();
 const http = createServer(app);
 const frontendOrigins = (process.env.FRONTEND_ORIGINS || '')
@@ -17,12 +18,39 @@ app.use('/api', (req, res, next) => {
   res.vary('Origin');
   if (frontendOrigins.includes(req.headers.origin)) {
     res.set('Access-Control-Allow-Origin', req.headers.origin);
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
+app.post('/api/rooms', (_, res) => {
+  try {
+    const code = allocateRoomCode(rooms);
+    const room = createRoomState();
+    rooms.set(code, room);
+    // Give the creator time to navigate, without keeping abandoned reservations forever.
+    room.reservationTimer = setTimeout(
+      () => {
+        if (rooms.get(code) === room && !room.members.size) rooms.delete(code);
+      },
+      5 * 60 * 1000,
+    );
+    room.reservationTimer.unref();
+    res.set('Cache-Control', 'no-store').status(201).json({ code });
+  } catch {
+    res.status(503).json({ error: 'All room codes are in use. Please try again shortly.' });
+  }
+});
+app.get('/api/rooms/:code', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!/^\d{5}$/.test(req.params.code) || !rooms.has(req.params.code)) {
+    return res
+      .status(404)
+      .json({ error: 'That room code is no longer active. Ask for a new invite.' });
+  }
+  res.json({ code: req.params.code });
+});
 app.get('/api/gifs', async (req, res) => {
   const query = String(req.query.q || '').slice(0, 80);
   const fallback = [
@@ -92,23 +120,26 @@ io.on('connection', (s) => {
   };
   s.on('join', (data) => {
     if (typeof data?.room !== 'string' || typeof data?.name !== 'string') return;
-    room = data.room.slice(0, 80);
-    let r = state();
+    if (room) return;
+    const code = data.room.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9_-]{2,79}$/.test(code)) {
+      return s.emit('room-error', 'That room code is invalid.');
+    }
+    let r = rooms.get(code);
     if (!r) {
-      r = {
-        members: new Map(),
-        host: s.id,
-        state: null,
-        locked: false,
-        voteEnabled: false,
-        sharing: null,
-      };
-      rooms.set(room, r);
+      if (/^\d+$/.test(code)) {
+        return s.emit('room-error', 'That room code is no longer active. Ask for a new invite.');
+      }
+      // Preserve existing shared links while new rooms use reserved five-digit codes.
+      r = createRoomState(s.id);
+      rooms.set(code, r);
     }
     if (r.members.size >= 100) {
-      room = undefined;
       return s.emit('room-error', 'Room is full');
     }
+    room = code;
+    clearTimeout(r.reservationTimer);
+    if (!r.host) r.host = s.id;
     r.members.set(s.id, data.name.slice(0, 32));
     s.join(room);
     update();

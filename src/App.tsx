@@ -77,6 +77,14 @@ function WatchRoom({ room }: { room: string }) {
     setNotice(message);
     setTimeout(() => setNotice(''), 4000);
   }
+  async function copyRoomCode() {
+    try {
+      await navigator.clipboard.writeText(room);
+      toast('Room code copied.');
+    } catch {
+      toast(`Your room code is ${room}.`);
+    }
+  }
   function react(emoji: string, broadcast = true) {
     const r = { id: crypto.randomUUID(), emoji, x: 20 + Math.random() * 60 };
     setReactions((a) => [...a.slice(-20), r]);
@@ -277,9 +285,15 @@ function WatchRoom({ room }: { room: string }) {
               <span className="title-star">✳</span>
             </h1>
             <div className="room-meta">
-              <span className="room-tag">#{room}</span>
+              <button
+                className="room-tag room-code-badge"
+                title="Copy room code"
+                onClick={copyRoomCode}
+              >
+                {room} <Copy size={12} />
+              </button>
               <span className="meta-divider" />
-              <Lock size={12} /> Invite-only link <span className="meta-divider" />
+              <Lock size={12} /> Shared room <span className="meta-divider" />
               <span className="connection-dot" />{' '}
               {sync.connected
                 ? 'Connected & in sync'
@@ -307,8 +321,8 @@ function WatchRoom({ room }: { room: string }) {
         </div>
         {sync.connectionError && (
           <div className="connection-warning" role="alert">
-            The room connection is unavailable. Chat and playback sync will reconnect automatically
-            when the service is back online.
+            {sync.roomError ||
+              'The room connection is unavailable. Chat and playback sync will reconnect automatically when the service is back online.'}
           </div>
         )}
         <div className="workspace">
@@ -848,12 +862,20 @@ function WatchRoom({ room }: { room: string }) {
             </h2>
             {modal === 'invite' ? (
               <>
-                <p>One link. All your favorite people. No account needed.</p>
+                <p>Give your friends the code. They can enter it on the home screen.</p>
+                <div className="invite-code" data-short={/^\d{5}$/.test(room)}>
+                  <span className="input-label">ROOM CODE</span>
+                  <strong>{room}</strong>
+                  <button className="yellow-btn full" onClick={copyRoomCode}>
+                    <Copy size={16} /> Copy room code
+                  </button>
+                </div>
                 <div className="invite-link">
                   <span>
                     {location.origin}/party/{room}
                   </span>
                   <button
+                    title="Copy invite link"
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(`${location.origin}/party/${room}`);
@@ -866,7 +888,7 @@ function WatchRoom({ room }: { room: string }) {
                     {copied ? <Check size={18} /> : <Copy size={18} />}
                   </button>
                 </div>
-                <span className="modal-foot">Only people with the link can find your room.</span>
+                <span className="modal-foot">Share the code or send the full invite link.</span>
               </>
             ) : (
               <>

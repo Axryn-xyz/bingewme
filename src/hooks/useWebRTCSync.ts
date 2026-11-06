@@ -10,6 +10,7 @@ export function useWebRTCSync(
   const socket = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
+  const [roomError, setRoomError] = useState('');
   const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
   const [host, setHost] = useState(false);
   const peers = useRef(new Map<string, RTCPeerConnection>());
@@ -19,8 +20,9 @@ export function useWebRTCSync(
     const s = io(ROOM_SERVER_URL, { autoConnect: true });
     socket.current = s;
     s.on('connect', () => {
-      setConnected(true);
+      setConnected(false);
       setConnectionError(false);
+      setRoomError('');
       s.emit('join', { room, name });
     });
     s.on('disconnect', () => setConnected(false));
@@ -28,8 +30,14 @@ export function useWebRTCSync(
       setConnected(false);
       setConnectionError(true);
     });
+    s.on('room-error', (message: string) => {
+      setConnected(false);
+      setConnectionError(true);
+      setRoomError(message);
+    });
     s.on('share-stop', () => setRemoteStream(null));
     s.on('members', ({ members, host }) => {
+      setConnected(true);
       setMembers(members);
       setHost(host === s.id);
     });
@@ -113,5 +121,15 @@ export function useWebRTCSync(
     socket.current?.emit('share-start');
     return stream.current;
   };
-  return { socket, connected, connectionError, members, host, broadcast, share, remoteStream };
+  return {
+    socket,
+    connected,
+    connectionError,
+    roomError,
+    members,
+    host,
+    broadcast,
+    share,
+    remoteStream,
+  };
 }

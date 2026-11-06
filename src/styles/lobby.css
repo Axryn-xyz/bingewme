@@ -402,3 +402,39 @@
     font-size: 9px;
   }
 }
+.room-code-badge {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+  gap: 8px;
+}
+.room-code-badge:focus-visible {
+  outline: 2px solid var(--accent-text);
+}
+.invite-code {
+  margin: 22px 0;
+  padding: 22px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-base);
+  text-align: center;
+}
+.invite-code .input-label {
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.invite-code strong {
+  display: block;
+  font-family: monospace;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+  letter-spacing: 2px;
+  color: var(--accent-text);
+  margin-bottom: 20px;
+}
+.invite-code[data-short='true'] strong {
+  font-size: 46px;
+  letter-spacing: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.invite-code .yellow-btn {
+  justify-content: center;
+}

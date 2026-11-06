@@ -9,10 +9,9 @@ export function parseRoomCode(input: string): string | null {
     }
   }
   value = value.replace(/^\/?party\//, '').replace(/\/$/, '');
+  if (/^[\d\s-]+$/.test(value)) {
+    const digits = value.replace(/[\s-]/g, '');
+    return /^\d{5}$/.test(digits) ? digits : null;
+  }
   return /^[a-zA-Z0-9][a-zA-Z0-9_-]{2,79}$/.test(value) ? value.toLowerCase() : null;
-}
-
-export function createRoomCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(12));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
