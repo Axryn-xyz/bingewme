@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect } from 'react';
+import { lazy, Suspense, useRef, useState, useEffect } from 'react';
+import { readFavoriteEmojis, saveFavoriteEmojis, toggleFavoriteEmoji } from './lib/emoji-favorites';
 import { RoomLobby } from './components/RoomLobby';
 import { RoomEntry } from './components/RoomEntry';
 import { preparedName, clearEntry, saveName } from './lib/identity';
@@ -49,6 +50,7 @@ import { MediaEngine } from './components/player/MediaEngine';
 import { Controls } from './components/player/Controls';
 import { Telestrator } from './components/canvas/Telestrator';
 import { ReactionOverlay, type Reaction } from './components/chat/ReactionOverlay';
+const EmojiPicker = lazy(() => import('./components/chat/EmojiPicker'));
 export default function App() {
   const match = location.pathname.match(/^\/party\/([^/]+)\/?$/);
   const room = match ? parseRoomCode(match[1]) : null;
@@ -87,7 +89,9 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const [mic, setMic] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [cam, setCam] = useState<MediaStream | null>(null);
-  const [picker, setPicker] = useState(false);
+  const [picker, setPicker] = useState<'reaction' | 'chat' | null>(null);
+  const [favoriteEmojis, setFavoriteEmojis] = useState(readFavoriteEmojis);
+  useEffect(() => saveFavoriteEmojis(favoriteEmojis), [favoriteEmojis]);
   const [gifPicker, setGifPicker] = useState(false);
   const [vote, setVote] = useState(false);
   const [votes, setVotes] = useState(0);
@@ -332,7 +336,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
     if (sync.connected) sync.socket.current?.emit('chat', m);
     else s.addMessage(m);
     setText('');
-    setPicker(false);
+    setPicker(null);
   }
   const participants = sync.members.length ? sync.members : [{ id: 'local', name: 'You' }];
   const uploadPanel = uploadStatus && (
@@ -586,12 +590,17 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
             <div className="interaction-bar">
               <div className="reaction-buttons">
                 <span>FEEL SOMETHING?</span>
-                {['🔥', '😂', '❤️', '😮', '👏'].map((e) => (
+                {favoriteEmojis.slice(0, 5).map((e) => (
                   <button key={e} title={`React ${e}`} onClick={() => react(e)}>
                     {e}
                   </button>
                 ))}
-                <button className="more-reactions" onClick={() => setPicker(!picker)}>
+                <button
+                  className="more-reactions"
+                  title="Choose emojis and edit favorites"
+                  aria-label="Choose emojis and edit favorites"
+                  onClick={() => setPicker('reaction')}
+                >
                   <Plus size={17} />
                 </button>
               </div>
@@ -764,23 +773,6 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                     }}
                   />
                 )}
-                {picker && (
-                  <div className="emoji-picker">
-                    {['🎉', '💀', '🍿', '🥹', '🤯', '🙌', '💚', '👀', '🎬', '✨', '😎', '🥳'].map(
-                      (e) => (
-                        <button
-                          key={e}
-                          onClick={() => {
-                            react(e);
-                            setText((t) => t + e);
-                          }}
-                        >
-                          {e}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                )}
                 <div className="chat-compose">
                   <div className="compose-input">
                     <input
@@ -798,7 +790,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                   </div>
                   <div className="compose-bottom">
                     <div>
-                      <button title="Emoji picker" onClick={() => setPicker(!picker)}>
+                      <button title="Emoji picker" onClick={() => setPicker('chat')}>
                         <Smile size={17} />
                       </button>
                       <button className="gif-btn" onClick={() => setGifPicker((open) => !open)}>
@@ -1167,6 +1159,28 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
           if (e.target.files?.[0]) localFile(e.target.files[0]);
         }}
       />
+      {picker && (
+        <Suspense
+          fallback={
+            <div className="toast" role="status">
+              Loading emojis…
+            </div>
+          }
+        >
+          <EmojiPicker
+            mode={picker}
+            favorites={favoriteEmojis}
+            onClose={() => setPicker(null)}
+            onFavorite={(emoji) =>
+              setFavoriteEmojis((values) => toggleFavoriteEmoji(values, emoji))
+            }
+            onPick={(emoji) => {
+              if (picker === 'chat') setText((value) => value + emoji);
+              else react(emoji);
+            }}
+          />
+        </Suspense>
+      )}
       {notice && (
         <div className="toast">
           <Check size={16} />

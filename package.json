@@ -23,6 +23,7 @@
     "@sparticuz/chromium": "^153.0.0",
     "@tailwindcss/vite": "^4.3.5",
     "cheerio": "^1.2.0",
+    "emoji-picker-react": "^5.1.4",
     "express": "^4.21.2",
     "hls.js": "^1.7.4",
     "ipaddr.js": "^2.5.0",

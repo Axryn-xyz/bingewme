@@ -380,7 +380,7 @@ io.on('connection', (s) => {
     s.to(room).emit('draw', data);
   });
   s.on('reaction', (data) => {
-    if (room && typeof data === 'string' && data.length < 16) s.to(room).emit('reaction', data);
+    if (room && typeof data === 'string' && data.length <= 32) s.to(room).emit('reaction', data);
   });
   s.on('file-metadata', (data) => {
     if (state() && data && typeof data.name === 'string' && typeof data.hash === 'string')
