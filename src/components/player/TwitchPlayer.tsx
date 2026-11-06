@@ -36,7 +36,7 @@ export function TwitchPlayer({
           height: '100%',
           parent: [location.hostname],
           autoplay: false,
-          muted: false,
+          muted: true,
           ...{ [spec.kind === 'video' ? 'video' : 'channel']: spec.value },
         });
         const listeners: [string, () => void][] = [];
@@ -88,9 +88,14 @@ export function TwitchPlayer({
           );
           controller.isLive = spec.kind === 'channel';
           controller.supportsPlaybackRate = false;
+          // Cross-origin playback with sound can be blocked even after a click in our toolbar.
+          // Keep the initial play muted; our Enable sound action supplies the local gesture.
+          useStore.getState().set({ needsUnmute: useStore.getState().volume > 0 });
           controller.setVolume(useStore.getState().volume);
           useStore.getState().set({ controller, rate: 1, duration: controller.duration });
           interval = setInterval(() => controller?.tick(), 250);
+          if (useStore.getState().playing)
+            controller.play().catch(() => useStore.getState().set({ needsInteraction: true }));
         });
         on(api.Player.PLAYING, () => {
           useStore.getState().set({ mediaError: '' });
