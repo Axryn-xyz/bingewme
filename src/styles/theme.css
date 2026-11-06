@@ -1,0 +1,49 @@
+:root {
+  --accent: #e7ff66;
+  --on-accent: #090909;
+  --accent-text: #e7ff66;
+  --accent-soft: #dee3bf;
+  --accent-shadow: #525832;
+  --surface-base: #12120f;
+  --surface-panel: #191a14;
+  --surface-raised: #222419;
+  --surface-active: #323522;
+  --border: #4b4d3d;
+  --border-strong: #7a7f5c;
+  --text-faint: #9ea18c;
+  --text-muted: #b3b6a5;
+  --text-secondary: #d0d1c7;
+  --text-primary: #f1f1ee;
+  --shadow: #050505;
+  --danger-text: #ffacbd;
+} /* Filled controls use whichever foreground gives the greater contrast. */
+.yellow-btn,
+.send-button,
+.welcome-mark,
+.brand .brand-mark {
+  color: var(--on-accent);
+}
+.yellow-btn:hover,
+.send-button:hover,
+.welcome-mark:hover {
+  opacity: 1;
+}
+.toggle.on i {
+  background: var(--on-accent);
+}
+.chat-avatar,
+.avatar-stack > span {
+  color: var(--surface-base);
+}
+.media-tabs button.active {
+  border-color: var(--accent-text);
+}
+input[type='range'] {
+  accent-color: var(--accent-text);
+}
+input[type='color'] {
+  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  padding: 2px;
+  background: var(--surface-base);
+}

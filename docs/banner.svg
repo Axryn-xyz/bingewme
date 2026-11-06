@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Binge W Me</title>
+  <desc id="desc">Your people. One screen. A dark watch-party interface with a yellow play button and floating reactions.</desc>
+  <defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#39412b"/></pattern></defs>
+  <path fill="#101110" d="M0 0h1200v360H0z"/><path fill="url(#dots)" d="M0 0h1200v360H0z"/><path fill="#101110" d="M0 0h680v360H0z"/><path stroke="#3b4429" d="M0 359h1200M0 1h1200"/>
+  <g font-family="Arial,Helvetica,sans-serif">
+    <text x="62" y="73" fill="#b4c29c" font-size="13" letter-spacing="4">YOUR PEOPLE. ONE SCREEN.</text>
+    <text x="57" y="169" fill="#eef0e9" font-size="80" font-weight="700" letter-spacing="-4">Binge <tspan fill="#e7ff66">W Me</tspan></text>
+    <text x="62" y="218" fill="#a4ae96" font-size="20">Different sofas. Same moment.</text>
+    <path fill="#e7ff66" stroke="#080b04" stroke-width="2" d="M62 258h227v44H62z"/><text x="80" y="286" fill="#101110" font-size="13" font-weight="700" letter-spacing="1">CREATE A ROOM</text><path d="M259 273l8 7-8 7m-10-7h17" fill="none" stroke="#101110" stroke-width="2"/>
+    <text x="313" y="286" fill="#99a884" font-size="12" letter-spacing="1">NO ACCOUNT NEEDED</text>
+  </g>
+  <g transform="translate(741 63) rotate(-3 178 117)">
+    <path fill="#050505" d="M9 9h359v234H9z"/><path fill="#1d2417" stroke="#8f9f72" stroke-width="2" d="M0 0h359v234H0z"/><path stroke="#485636" d="M0 30h359M0 201h359"/>
+    <circle cx="16" cy="15" r="3" fill="#e7ff66"/><text x="27" y="19" fill="#c5d2af" font-family="monospace" font-size="9" letter-spacing="2">READY WHEN YOU ARE</text>
+    <path fill="#141a10" d="M13 43h333v145H13z"/><circle cx="179" cy="115" r="36" fill="#e7ff66" stroke="#050505" stroke-width="2"/><path fill="#101110" d="M172 99l23 16-23 16z"/>
+    <path stroke="#52603e" stroke-width="3" d="M18 217h324"/><path stroke="#e7ff66" stroke-width="3" d="M18 217h133"/><circle cx="151" cy="217" r="4" fill="#e7ff66"/>
+  </g>
+  <g transform="translate(1084 49) rotate(8)"><path fill="#f3a5cc" stroke="#080808" stroke-width="2" d="M0 0h56v48H0z"/><path fill="#39182b" d="M14 15c0-7 9-8 14-1 5-7 14-6 14 1 0 8-14 18-14 18S14 23 14 15z"/></g>
+  <g transform="translate(714 260) rotate(-9)"><path fill="#c5b0ec" stroke="#080808" stroke-width="2" d="M0 0h65v49H0z"/><path d="M17 17v-3m30 3v-3M20 29q12 12 25 0" fill="none" stroke="#30213f" stroke-width="3"/></g>
+</svg>
