@@ -407,6 +407,10 @@
   letter-spacing: 2px;
   gap: 8px;
 }
+.room-meta .room-code-badge {
+  display: inline-flex;
+  max-width: none;
+}
 .room-code-badge:focus-visible {
   outline: 2px solid var(--accent-text);
 }
