@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Link, MonitorPlay, Plus, Users, Zap } from 'lucide-react';
 import { parseRoomCode } from '../lib/rooms';
 import { apiUrl } from '../lib/backend';
+import { savedName, prepareEntry } from '../lib/identity';
 
 export function RoomLobby() {
-  const [name, setName] = useState(() => sessionStorage.getItem('party-name') || '');
+  const [name, setName] = useState(savedName);
   const [room, setRoom] = useState('');
   const [error, setError] = useState('');
   const [pending, setPending] = useState<'create' | 'join' | null>(null);
   function enter(code: string) {
-    sessionStorage.setItem('party-name', name.trim().slice(0, 32) || 'Guest');
+    prepareEntry(code, name);
     window.location.assign(`/party/${code}`);
   }
   async function create() {

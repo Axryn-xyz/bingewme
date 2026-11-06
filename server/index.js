@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import { allocateRoomCode, createRoomState } from './room-codes.js';
+import { createRoomMedia } from './room-media.js';
 const app = express();
 const http = createServer(app);
 const frontendOrigins = (process.env.FRONTEND_ORIGINS || '')
@@ -19,11 +20,30 @@ app.use('/api', (req, res, next) => {
   if (frontendOrigins.includes(req.headers.origin)) {
     res.set('Access-Control-Allow-Origin', req.headers.origin);
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   }
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
+function publishMedia(code, room, item) {
+  if (room.sharing) {
+    room.sharing = null;
+    io.to(code).emit('share-stop');
+  }
+  room.state = {
+    source: item.url,
+    title: item.title,
+    mediaId: item.id,
+    time: 0,
+    playing: false,
+    rate: 1,
+  };
+  room.updatedAt = Date.now();
+  io.to(code).emit('queue-state', room.queue);
+  io.to(code).emit('sync', room.state);
+}
+const media = createRoomMedia({ app, io, rooms, publishMedia });
 app.post('/api/rooms', (_, res) => {
   try {
     const code = allocateRoomCode(rooms);
@@ -140,13 +160,69 @@ io.on('connection', (s) => {
     room = code;
     clearTimeout(r.reservationTimer);
     if (!r.host) r.host = s.id;
-    r.members.set(s.id, data.name.slice(0, 32));
+    r.members.set(
+      s.id,
+      data.name
+        .replace(/[\x00-\x1f\x7f]/g, '')
+        .trim()
+        .slice(0, 32) || 'Guest',
+    );
+    s.data.uploadToken = randomUUID();
     s.join(room);
     update();
+    s.emit('session', { uploadToken: s.data.uploadToken });
+    s.emit('queue-state', r.queue);
     s.emit('settings', { locked: r.locked, vote: r.voteEnabled });
     const current = snapshot();
     if (current) s.emit('sync', current);
     if (r.sharing) io.to(r.sharing).emit('share-request', s.id);
+  });
+  s.on('rename', (name, reply) => {
+    const r = state();
+    const clean =
+      typeof name === 'string'
+        ? name
+            .replace(/[\x00-\x1f\x7f]/g, '')
+            .trim()
+            .slice(0, 32)
+        : '';
+    if (!r || !clean) return reply?.({ error: 'Enter a name with 1–32 characters.' });
+    r.members.set(s.id, clean);
+    update();
+    reply?.({ name: clean });
+  });
+  s.on('queue-add', (data, reply) => {
+    const r = state();
+    if (!r || (r.locked && r.host !== s.id))
+      return reply?.({ error: 'Only the host can add media while controls are locked.' });
+    if (r.queue.length >= 100) return reply?.({ error: 'The room queue is full.' });
+    try {
+      const url = new URL(data.url);
+      if (!['http:', 'https:'].includes(url.protocol) || url.href.length > 4096) throw Error();
+      const item = {
+        id: randomUUID(),
+        title: String(data.title || url.hostname).slice(0, 200),
+        subtitle: url.hostname,
+        url: url.href,
+        image: '',
+        duration: 'VIDEO',
+        kind: 'url',
+      };
+      r.queue.push(item);
+      publishMedia(room, r, item);
+      reply?.({ item });
+    } catch {
+      reply?.({ error: 'Enter a valid HTTP or HTTPS media link.' });
+    }
+  });
+  s.on('queue-select', (id, reply) => {
+    const r = state();
+    if (!r || (r.locked && r.host !== s.id))
+      return reply?.({ error: 'Playback controls are locked by the host.' });
+    const item = r.queue.find((item) => item.id === id);
+    if (!item) return reply?.({ error: 'That video is no longer in this room.' });
+    publishMedia(room, r, item);
+    reply?.({ ok: true });
   });
   s.on('sync', (data) => {
     const r = state();
@@ -160,13 +236,19 @@ io.on('connection', (s) => {
       data.source.length > 4096
     )
       return;
-    if (data.source !== 'local' && !/^https?:\/\//.test(data.source)) return;
+    if (
+      data.source !== 'local' &&
+      !/^https?:\/\//.test(data.source) &&
+      !r.queue.some((item) => item.url === data.source)
+    )
+      return;
     r.state = {
       time: data.time,
       playing: !!data.playing,
       rate: data.rate,
       source: data.source,
       title: String(data.title || 'Untitled').slice(0, 200),
+      mediaId: typeof data.mediaId === 'string' ? data.mediaId : undefined,
     };
     r.updatedAt = Date.now();
     s.to(room).emit('sync', r.state);
@@ -266,6 +348,7 @@ io.on('connection', (s) => {
     if (!r.members.size) {
       clearTimeout(r.voteTimer);
       rooms.delete(room);
+      media.removeRoom(room);
     } else {
       if (r.host === s.id) r.host = r.members.keys().next().value;
       if (r.sharing === s.id) r.sharing = null;
@@ -276,3 +359,9 @@ io.on('connection', (s) => {
 http.listen(process.env.PORT || 3001, () =>
   console.log('Binge W Me room server ready on port ' + (process.env.PORT || 3001)),
 );
+for (const signal of ['SIGINT', 'SIGTERM'])
+  process.once(signal, () => {
+    io.close();
+    http.close();
+    void media.close().finally(() => process.exit(0));
+  });

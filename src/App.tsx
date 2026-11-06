@@ -1,5 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { RoomLobby } from './components/RoomLobby';
+import { RoomEntry } from './components/RoomEntry';
+import { preparedName, clearEntry, saveName } from './lib/identity';
+import { apiUrl } from './lib/backend';
 import { parseRoomCode } from './lib/rooms';
 import { applyTheme, readAccent } from './lib/theme';
 import {
@@ -45,13 +48,25 @@ import { ReactionOverlay, type Reaction } from './components/chat/ReactionOverla
 export default function App() {
   const match = location.pathname.match(/^\/party\/([^/]+)\/?$/);
   const room = match ? parseRoomCode(match[1]) : null;
-  return room ? <WatchRoom room={room} /> : <RoomLobby />;
+  const [name, setName] = useState(() => preparedName(room));
+  useEffect(() => {
+    if (name) clearEntry();
+  }, [name]);
+  if (!room) return <RoomLobby />;
+  return name ? (
+    <WatchRoom room={room} initialName={name} />
+  ) : (
+    <RoomEntry room={room} onJoin={setName} />
+  );
 }
-function WatchRoom({ room }: { room: string }) {
+export function WatchRoom({ room, initialName }: { room: string; initialName: string }) {
   const [accent, setAccent] = useState(readAccent);
   const s = useStore();
   const video = useRef<HTMLVideoElement>(null);
-  const [name] = useState(() => sessionStorage.getItem('party-name') || 'You');
+  const [name, setName] = useState(initialName);
+  const [nameDraft, setNameDraft] = useState(initialName);
+  const [uploading, setUploading] = useState(false);
+  const uploadAbort = useRef<AbortController | null>(null);
   const sync = useWebRTCSync(room, name, video);
   const [tab, setTab] = useState('chat');
   const [modal, setModal] = useState<'media' | 'invite' | null>(null);
@@ -71,7 +86,6 @@ function WatchRoom({ room }: { room: string }) {
   const [votes, setVotes] = useState(0);
   const file = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
-  const objectUrl = useRef('');
   const disabled = s.locked && !sync.host;
   function toast(message: string) {
     setNotice(message);
@@ -108,17 +122,16 @@ function WatchRoom({ room }: { room: string }) {
         data.passed ? 'Vote passed. Taking a breather.' : 'Pause vote did not reach a majority.',
       );
     };
-    const fileNotice = (data: { name: string }) =>
-      toast('The host loaded ' + data.name + '. Select your matching local file.');
+    const stopShare = () => setLocalStream(null);
     socket.on('vote-state', voteState);
     socket.on('vote-result', voteResult);
-    socket.on('file-metadata', fileNotice);
+    socket.on('share-stop', stopShare);
     return () => {
       socket.off('reaction', r);
       socket.off('settings', settings);
       socket.off('vote-state', voteState);
       socket.off('vote-result', voteResult);
-      socket.off('file-metadata', fileNotice);
+      socket.off('share-stop', stopShare);
     };
   }, [sync.connected]);
   useEffect(() => {
@@ -138,12 +151,22 @@ function WatchRoom({ room }: { room: string }) {
   }, [s.playing, s.volume, disabled]);
   useEffect(
     () => () => {
-      if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       cam?.getTracks().forEach((t) => t.stop());
     },
     [cam],
   );
+  useEffect(() => () => uploadAbort.current?.abort(), []);
+  useEffect(() => {
+    setLocalStream(null);
+  }, [s.source]);
   function toggle() {
+    if (s.needsInteraction) {
+      video.current
+        ?.play()
+        .then(() => s.set({ needsInteraction: false }))
+        .catch(() => toast('Tap play again to allow video and audio.'));
+      return;
+    }
     if (disabled || (!s.source && !localStream && !sync.remoteStream)) return;
     if (s.playing && s.vote) {
       sync.socket.current?.emit('vote-start');
@@ -155,54 +178,60 @@ function WatchRoom({ room }: { room: string }) {
     sync.broadcast();
   }
   function load(item: QueueItem) {
-    s.set({ source: item.url, title: item.title, playing: false, time: 0, duration: 0 });
-    setLocalStream(null);
-    setTimeout(sync.broadcast, 100);
+    if (disabled) return;
+    sync.selectMedia(item.id).catch((error) => toast(error.message));
   }
   function next() {
     if (!s.queue.length) return;
-    const index = s.queue.findIndex((q) => q.title === s.title);
+    const index = s.queue.findIndex((q) => q.id === s.mediaId);
     load(s.queue[(index + 1) % s.queue.length]);
   }
   async function localFile(f: File) {
-    if (disabled) return;
-    stageFile(f).catch(() =>
-      toast('Browser storage is full. Playback still works for this session.'),
-    );
-    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
-    objectUrl.current = URL.createObjectURL(f);
-    s.set({ source: objectUrl.current, title: f.name, playing: false, time: 0 });
-    setModal(null);
-    setLocalStream(null);
-    const hash = Array.from(
-      new Uint8Array(
-        await crypto.subtle.digest('SHA-256', await f.slice(0, 1048576).arrayBuffer()),
-      ),
-    )
-      .map((x) => x.toString(16).padStart(2, '0'))
-      .join('');
-    sync.socket.current?.emit('file-metadata', { name: f.name, size: f.size, hash });
-    toast('Local file loaded. Friends should select the same file.');
+    if (disabled || uploading) return;
+    if (!sync.connected || !sync.uploadToken) {
+      toast('Wait for the room connection before uploading.');
+      return;
+    }
+    setUploading(true);
+    const abort = new AbortController();
+    uploadAbort.current = abort;
+    try {
+      const response = await fetch(
+        apiUrl(`/api/rooms/${room}/media?name=${encodeURIComponent(f.name)}`),
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${sync.uploadToken}`,
+            'Content-Type': f.type || 'application/octet-stream',
+          },
+          body: f,
+          signal: abort.signal,
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Upload failed.');
+      void stageFile(f).catch(() => {});
+      setModal(null);
+      toast('Video added. Everyone in the room can watch it now.');
+    } catch (error) {
+      if (!abort.signal.aborted)
+        toast(error instanceof Error ? error.message : 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+      uploadAbort.current = null;
+      if (file.current) file.current.value = '';
+    }
   }
-  function addLink() {
+  async function addLink() {
     try {
       const parsed = new URL(url);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw Error();
       const title = decodeURIComponent(parsed.pathname.split('/').pop() || parsed.hostname);
-      const item = {
-        id: crypto.randomUUID(),
-        title,
-        subtitle: parsed.hostname,
-        url,
-        image: '',
-        duration: 'VIDEO',
-      };
-      s.set({ queue: [...s.queue, item] });
-      load(item);
+      await sync.addToQueue(url, title);
       setModal(null);
       setUrl('');
-    } catch {
-      toast('Enter a valid http or https video URL.');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Enter a valid http or https video URL.');
     }
   }
   async function share() {
@@ -349,13 +378,26 @@ function WatchRoom({ room }: { room: string }) {
                   if (e.dataTransfer.files[0]) localFile(e.dataTransfer.files[0]);
                 }}
               >
-                <MediaEngine ref={video} stream={localStream || sync.remoteStream} onEnded={next} />
+                <MediaEngine
+                  ref={video}
+                  stream={localStream || sync.remoteStream}
+                  onEnded={() => {
+                    if (sync.host) next();
+                  }}
+                />
                 <div className="video-shade" />
-                {(s.source || localStream || sync.remoteStream) && !s.playing && (
-                  <button className="center-play" aria-label="Play video" onClick={toggle}>
-                    <Play size={28} fill="currentColor" />
-                  </button>
-                )}
+                {(s.source || localStream || sync.remoteStream) &&
+                  (!s.playing || s.needsInteraction) && (
+                    <button
+                      className="center-play"
+                      aria-label={
+                        s.needsInteraction ? 'Tap to start video and audio' : 'Play video'
+                      }
+                      onClick={toggle}
+                    >
+                      <Play size={28} fill="currentColor" />
+                    </button>
+                  )}
                 {s.source || localStream || sync.remoteStream ? (
                   <div className="film-label">
                     <span className="film-pill">
@@ -411,7 +453,8 @@ function WatchRoom({ room }: { room: string }) {
                 disabled={disabled || (!s.source && !localStream && !sync.remoteStream)}
                 onToggle={toggle}
                 onNext={next}
-                onSync={() => {
+                onChange={sync.broadcast}
+                onResync={() => {
                   if (sync.host) sync.broadcast();
                   else sync.socket.current?.emit('request-sync');
                   toast('Playback synchronized.');
@@ -685,7 +728,7 @@ function WatchRoom({ room }: { room: string }) {
                 </p>
                 {s.queue.map((item, i) => (
                   <button
-                    className={`queue-item ${s.title === item.title ? 'current' : ''}`}
+                    className={`queue-item ${s.mediaId === item.id ? 'current' : ''}`}
                     key={item.id}
                     onClick={() => !disabled && load(item)}
                   >
@@ -693,9 +736,7 @@ function WatchRoom({ room }: { room: string }) {
                       <span>{item.duration}</span>
                     </div>
                     <div>
-                      <small>
-                        {s.title === item.title ? 'NOW PLAYING' : `0${i + 1} / UP NEXT`}
-                      </small>
+                      <small>{s.mediaId === item.id ? 'NOW PLAYING' : `0${i + 1} / UP NEXT`}</small>
                       <strong>{item.title}</strong>
                       <p>{item.subtitle}</p>
                     </div>
@@ -742,6 +783,37 @@ function WatchRoom({ room }: { room: string }) {
               <div className="panel-content">
                 <h3>Make yourself at home.</h3>
                 <p className="panel-description">A little control over the chaos.</p>
+                <form
+                  className="name-settings"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    try {
+                      const result = await sync.rename(nameDraft);
+                      setName(saveName(result.name));
+                      setNameDraft(result.name);
+                      toast('Your name has been updated.');
+                    } catch (error) {
+                      toast(error instanceof Error ? error.message : 'Could not update your name.');
+                    }
+                  }}
+                >
+                  <label className="input-label" htmlFor="room-display-name">
+                    YOUR NAME
+                  </label>
+                  <div className="compose-input">
+                    <input
+                      id="room-display-name"
+                      required
+                      maxLength={32}
+                      value={nameDraft}
+                      onChange={(event) => setNameDraft(event.target.value)}
+                      autoComplete="nickname"
+                    />
+                    <button className="outline-btn" type="submit" disabled={!sync.connected}>
+                      Save
+                    </button>
+                  </div>
+                </form>
                 {[
                   {
                     title: 'Host controls only',
@@ -927,11 +999,21 @@ function WatchRoom({ room }: { room: string }) {
                     </button>
                   </>
                 ) : mode === 'local' ? (
-                  <button className="drop-zone" onClick={() => file.current?.click()}>
+                  <button
+                    className="drop-zone"
+                    disabled={uploading || !sync.connected}
+                    onClick={() => file.current?.click()}
+                  >
                     <Upload size={30} />
-                    <strong>Your file. Everyone’s movie night.</strong>
-                    <span>Choose MP4, WebM, MKV, or MP3</span>
-                    <small>Each guest needs a matching copy.</small>
+                    <strong>
+                      {uploading ? 'Uploading for the room…' : 'Upload once. Everyone watches.'}
+                    </strong>
+                    <span>Choose a video or audio file</span>
+                    <small>
+                      {uploading
+                        ? 'Keep this tab open until the upload finishes.'
+                        : 'Shared temporarily with the people in this room.'}
+                    </small>
                   </button>
                 ) : (
                   <div className="screen-info">
@@ -955,7 +1037,7 @@ function WatchRoom({ room }: { room: string }) {
         hidden
         ref={file}
         type="file"
-        accept="video/*,audio/*,.mkv"
+        accept=".mp4,.webm,.mkv,.mov,.mp3,.m4a,.ogg,.wav"
         onChange={(e) => {
           if (e.target.files?.[0]) localFile(e.target.files[0]);
         }}

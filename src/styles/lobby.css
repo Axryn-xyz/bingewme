@@ -442,3 +442,44 @@
 .invite-code .yellow-btn {
   justify-content: center;
 }
+.entry-main {
+  width: 100%;
+  max-width: 510px;
+  margin: auto;
+  padding: 45px 20px;
+}
+.entry-form h1 {
+  margin: 16px 0;
+  font-size: 35px;
+}
+.entry-form > p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-muted);
+  margin-bottom: 26px;
+}
+.entry-form .yellow-btn {
+  margin-top: 20px;
+  justify-content: space-between;
+}
+.entry-form > small {
+  display: block;
+  margin-top: 14px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+.entry-back {
+  display: block;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin-top: 22px;
+}
+.name-settings {
+  margin-bottom: 22px;
+}
+.name-settings .outline-btn {
+  font-size: 10px;
+  white-space: nowrap;
+}

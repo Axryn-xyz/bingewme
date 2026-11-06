@@ -56,7 +56,7 @@ test('home is a lobby and fresh rooms contain no sample media', async () => {
   const previousStorage = globalThis.sessionStorage;
   globalThis.sessionStorage = { getItem: () => null };
   try {
-    const { default: App } = await vite.ssrLoadModule('/src/App.tsx');
+    const { default: App, WatchRoom } = await vite.ssrLoadModule('/src/App.tsx');
     globalThis.location = { pathname: '/', origin: 'http://localhost' };
     const home = renderToString(createElement(App));
     assert.match(home, /Create new room/);
@@ -64,7 +64,12 @@ test('home is a lobby and fresh rooms contain no sample media', async () => {
     assert.match(home, /FIVE-DIGIT CODE/);
     assert.doesNotMatch(home, /video-stage|Connecting to room|friday-night/);
     globalThis.location = { pathname: '/party/48271', origin: 'http://localhost' };
-    const room = renderToString(createElement(App));
+    const invite = renderToString(createElement(App));
+    assert.match(invite, /invite-name/);
+    assert.match(invite, /Join room/);
+    assert.match(invite, /YOUR NAME/);
+    assert.doesNotMatch(invite, /video-stage/);
+    const room = renderToString(createElement(WatchRoom, { room: '48271', initialName: 'Alex' }));
     assert.match(room, /Add your first media/);
     assert.match(room, /Nothing playing yet/);
     assert.match(room, /Leave room/);

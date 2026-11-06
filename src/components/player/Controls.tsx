@@ -13,13 +13,15 @@ export const clock = (n: number) =>
   `${Math.floor((n || 0) / 60)}:${String(Math.floor((n || 0) % 60)).padStart(2, '0')}`;
 export function Controls({
   video,
-  onSync,
+  onChange,
+  onResync,
   onNext,
   onToggle,
   disabled,
 }: {
   video: React.RefObject<HTMLVideoElement | null>;
-  onSync: () => void;
+  onChange: () => void;
+  onResync: () => void;
   onNext: () => void;
   onToggle: () => void;
   disabled: boolean;
@@ -38,7 +40,7 @@ export function Controls({
         onChange={(e) => {
           if (video.current) video.current.currentTime = +e.target.value;
           s.set({ time: +e.target.value });
-          onSync();
+          onChange();
         }}
       />
       <div className="control-row">
@@ -70,7 +72,7 @@ export function Controls({
           {clock(s.time)} <span>/ {clock(s.duration)}</span>
         </span>
         <div className="control-spacer" />
-        <button className="sync-button" onClick={onSync}>
+        <button className="sync-button" onClick={onResync}>
           <RefreshCw size={13} /> <span>Resync</span>
         </button>
         <select
@@ -79,7 +81,7 @@ export function Controls({
           value={s.rate}
           onChange={(e) => {
             s.set({ rate: +e.target.value });
-            onSync();
+            onChange();
           }}
         >
           {[0.5, 0.75, 1, 1.25, 1.5, 2].map((n) => (

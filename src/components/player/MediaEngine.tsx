@@ -1,5 +1,6 @@
 import { forwardRef, useEffect } from 'react';
 import { useStore } from '../../store';
+import { apiUrl } from '../../lib/backend';
 export const MediaEngine = forwardRef<
   HTMLVideoElement,
   { stream: MediaStream | null; onEnded: () => void }
@@ -53,7 +54,7 @@ export const MediaEngine = forwardRef<
     <video
       ref={ref}
       className="video"
-      src={stream ? undefined : source}
+      src={stream ? undefined : source.startsWith('/api/media/') ? apiUrl(source) : source}
       playsInline
       preload="metadata"
       onTimeUpdate={(e) => set({ time: e.currentTarget.currentTime })}

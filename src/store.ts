@@ -13,6 +13,7 @@ export interface QueueItem {
   url: string;
   image: string;
   duration: string;
+  kind?: 'url' | 'upload';
 }
 export const initialQueue: QueueItem[] = [];
 interface State {
@@ -23,6 +24,8 @@ interface State {
   rate: number;
   source: string;
   title: string;
+  mediaId: string;
+  needsInteraction: boolean;
   drawing: boolean;
   color: string;
   width: number;
@@ -41,6 +44,8 @@ export const useStore = create<State>((set) => ({
   rate: 1,
   source: '',
   title: '',
+  mediaId: '',
+  needsInteraction: false,
   drawing: false,
   color: '#ffe600',
   width: 4,

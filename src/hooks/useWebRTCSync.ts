@@ -2,12 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useStore } from '../store';
 import { ROOM_SERVER_URL } from '../lib/backend';
+import { applyPlayback, type PlaybackSnapshot } from '../lib/playback';
+import type { QueueItem } from '../store';
 export function useWebRTCSync(
   room: string,
   name: string,
   video: React.RefObject<HTMLVideoElement | null>,
 ) {
   const socket = useRef<Socket | null>(null);
+  const nameRef = useRef(name);
+  nameRef.current = name;
+  const source = useStore((state) => state.source);
+  const pendingPlayback = useRef<{ snapshot: PlaybackSnapshot; receivedAt: number } | null>(null);
+  const [uploadToken, setUploadToken] = useState('');
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [roomError, setRoomError] = useState('');
@@ -23,7 +30,7 @@ export function useWebRTCSync(
       setConnected(false);
       setConnectionError(false);
       setRoomError('');
-      s.emit('join', { room, name });
+      s.emit('join', { room, name: nameRef.current });
     });
     s.on('disconnect', () => setConnected(false));
     s.on('connect_error', () => {
@@ -35,24 +42,46 @@ export function useWebRTCSync(
       setConnectionError(true);
       setRoomError(message);
     });
-    s.on('share-stop', () => setRemoteStream(null));
+    s.on('session', (data: { uploadToken: string }) => setUploadToken(data.uploadToken));
+    s.on('queue-state', (queue: QueueItem[]) => useStore.getState().set({ queue }));
+    s.on('share-stop', () => {
+      setRemoteStream(null);
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+    });
     s.on('members', ({ members, host }) => {
       setConnected(true);
       setMembers(members);
       setHost(host === s.id);
     });
     s.on('chat', useStore.getState().addMessage);
-    s.on('sync', (data) => {
+    s.on('sync', (data: PlaybackSnapshot) => {
+      const receivedAt = performance.now();
+      pendingPlayback.current = { snapshot: data, receivedAt };
       const v = video.current;
-      if (data.source && data.source !== 'local' && data.source !== useStore.getState().source)
-        useStore.getState().set({ source: data.source, title: data.title });
-      if (v) {
-        if (Math.abs(v.currentTime - data.time) > 1.5) v.currentTime = data.time;
-        v.playbackRate = data.rate;
-        if (data.playing) v.play().catch(() => {});
-        else v.pause();
+      const sourceChanged =
+        data.source && data.source !== 'local' && data.source !== useStore.getState().source;
+      if (sourceChanged) {
+        useStore.getState().set({
+          source: data.source,
+          title: data.title,
+          mediaId: data.mediaId || '',
+          time: 0,
+          duration: 0,
+          needsInteraction: false,
+        });
+        setRemoteStream(null);
+      } else if (v && v.readyState >= 1) {
+        applyPlayback(v, data, receivedAt)
+          .then(() => useStore.getState().set({ needsInteraction: false }))
+          .catch(() => useStore.getState().set({ needsInteraction: true }));
       }
-      useStore.getState().set({ playing: data.playing, rate: data.rate });
+      useStore.getState().set({
+        title: data.title,
+        mediaId: data.mediaId || '',
+        playing: data.playing,
+        rate: data.rate,
+      });
     });
     const peer = (id: string) => {
       let p = peers.current.get(id);
@@ -97,7 +126,34 @@ export function useWebRTCSync(
       peers.current.clear();
       stream.current?.getTracks().forEach((t) => t.stop());
     };
-  }, [room, name, video]);
+  }, [room, video]);
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    const apply = () => {
+      const pending = pendingPlayback.current;
+      if (pending)
+        applyPlayback(v, pending.snapshot, pending.receivedAt)
+          .then(() => useStore.getState().set({ needsInteraction: false }))
+          .catch(() => useStore.getState().set({ needsInteraction: true }));
+    };
+    v.addEventListener('loadedmetadata', apply);
+    if (v.readyState >= 1) apply();
+    return () => v.removeEventListener('loadedmetadata', apply);
+  }, [source, video]);
+  function request<T>(event: string, payload: unknown): Promise<T> {
+    return new Promise((resolve, reject) => {
+      if (!socket.current?.connected)
+        return reject(new Error('The room connection is unavailable.'));
+      socket.current
+        .timeout(8000)
+        .emit(event, payload, (error: Error | null, response: T & { error?: string }) => {
+          if (error) reject(new Error('The room did not respond. Please try again.'));
+          else if (response.error) reject(new Error(response.error));
+          else resolve(response);
+        });
+    });
+  }
   const broadcast = () => {
     const st = useStore.getState();
     socket.current?.emit('sync', {
@@ -106,6 +162,7 @@ export function useWebRTCSync(
       rate: st.rate,
       source: st.source.startsWith('blob:') ? 'local' : st.source,
       title: st.title,
+      mediaId: st.mediaId,
     });
   };
   useEffect(() => {
@@ -131,5 +188,10 @@ export function useWebRTCSync(
     broadcast,
     share,
     remoteStream,
+    uploadToken,
+    addToQueue: (url: string, title: string) =>
+      request<{ item: QueueItem }>('queue-add', { url, title }),
+    selectMedia: (id: string) => request<{ ok: boolean }>('queue-select', id),
+    rename: (name: string) => request<{ name: string }>('rename', name),
   };
 }

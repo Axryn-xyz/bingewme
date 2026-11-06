@@ -21,5 +21,6 @@ export function createRoomState(host = null) {
     locked: false,
     voteEnabled: false,
     sharing: null,
+    queue: [],
   };
 }

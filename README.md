@@ -29,7 +29,7 @@ Codes are reserved by the room server so active rooms cannot collide. Copy the c
 | **Your people, live**             | Room-scoped chat, floating emoji reactions, and a GIF picker. Add a server-side Giphy key for live GIF search.                                          |
 | **Draw on the moment**            | Annotate the screen with normalized canvas strokes broadcast to the room. Pick a brush color, clear your canvas, and let marks fade after four seconds. |
 | **Keep the remote under control** | Enable host-only playback controls or vote before pausing. Pause ballots last five seconds and require a majority.                                      |
-| **Keep watching**                 | Build a local media queue, choose the next video, adjust volume and speed, or use fullscreen and picture-in-picture where supported.                    |
+| **Keep watching**                 | Share a room-wide media queue, choose the next video, adjust volume and speed, or use fullscreen and picture-in-picture where supported.                |
 | **Make it yours**                 | Choose an accent and generate coordinated surfaces, borders, and text. Button foregrounds adapt for contrast; your palette persists in the browser.     |
 
 ### A palette that follows your color
@@ -42,11 +42,13 @@ Pink should feel pink all the way through. The theme engine derives a low-satura
 | ------------------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Direct MP4, WebM & browser-supported audio | Native player                                           | Shared playback controls and drift correction                              |
 | HLS / `.m3u8`                              | Native HLS when available; lazy-loaded HLS.js otherwise | Native-player synchronization                                              |
-| Local file                                 | Object URL with IndexedDB staging                       | Each guest needs their own matching copy; playback commands are shared     |
+| Local file                                 | Temporary upload with HTTP range streaming              | One upload; guests stream the same file with shared playback controls      |
 | Screen share                               | Browser capture over WebRTC                             | One live broadcast; system audio depends on the browser and capture source |
 | YouTube & Vimeo                            | Embedded platform player                                | Platform controls only; playback is currently independent                  |
 
-Local media is not uploaded. Guests receive a file-name/size announcement and a SHA-256 fingerprint of the first 1 MiB; complete-file equality is not enforced. A file extension alone does not guarantee browser codec support.
+Local files are uploaded once to temporary storage on the room server. Guests receive the same playable URL and can stream or seek without selecting their own copy. Files are removed when the last guest leaves and become unavailable after a server restart. The application limit defaults to 1 GiB per file, configurable with `MAX_UPLOAD_BYTES`; your hosting provider can impose a lower request-size or disk limit. A file extension alone does not guarantee browser codec support.
+
+Invite links open a name-entry screen before joining. Guests can reuse a saved name, choose a new one, or join as Guest. Joining with a code uses the name entered on the homepage, and names can be changed inside Room Settings without disconnecting.
 
 ## Run locally
 
@@ -120,6 +122,8 @@ Create `.env` from `.env.example` first, or omit `--env-file .env` to use the de
 
 ### Environment
 
+The Node service needs writable temporary disk space for uploaded media. Set `MAX_UPLOAD_BYTES` to adjust the application's per-file limit (default `1073741824` bytes / 1 GiB). Provider request-size, disk, bandwidth, and proxy timeout limits still apply. Uploads use the Node service directly when `VITE_ROOM_SERVER_URL` is set, so video bytes do not pass through the Vercel frontend.
+
 For split hosting, set `VITE_ROOM_SERVER_URL` on the frontend before building and `FRONTEND_ORIGINS` on the Node server. Both are public URL settings. Leave them empty when hosting the whole app on one Node service.
 
 | Variable        | Required | Purpose                                                                                              |
@@ -135,6 +139,7 @@ Pass variables through your hosting provider or container environment. For a loc
 src/
   components/
     RoomLobby.tsx          Create and join rooms
+    RoomEntry.tsx          Choose a name before opening an invite
     player/                Media engine and playback controls
     canvas/                Live canvas annotations
     chat/                  Reactions and GIF picker
@@ -143,6 +148,7 @@ src/
   styles/                  Brutalist layout and adaptive theme tokens
   store.ts                 Typed Zustand application state
 server/index.js            HTTP routes, rooms, votes and signaling
+server/room-media.js       Room-scoped temporary uploads and range streaming
 tests/                     Rendering, room isolation and palette checks
 ```
 
@@ -158,18 +164,18 @@ npm test
 
 GitHub Actions runs these checks on pushes to `main` and on pull requests. The badges above reflect the repository's current workflow status, commit history, language mix, and open issues.
 
-Tests cover room-link parsing, unique room codes, lobby and empty-player rendering, room isolation, chat delivery, host locking, playback snapshots, majority voting, adaptive-palette contrast, and saved theme preferences. Use `npm run format` to apply the shared formatting rules.
+Tests cover room-link parsing, unique room codes, invite name entry, lobby and empty-player rendering, shared queue updates, late joiners, authenticated file uploads, HTTP range streaming, room-file cleanup, username changes, room isolation, chat delivery, host locking, delayed playback readiness, majority voting, adaptive-palette contrast, and saved theme preferences. Use `npm run format` to apply the shared formatting rules.
 
 ## Current boundaries
 
 The core watch-room experience is implemented. These limits matter when choosing how to deploy and use it:
 
-- **Temporary rooms:** memberships and playback snapshots live in one server process. Rooms disappear when the last guest leaves or the process restarts. Chat is session-local; queues and theme choices are browser-local.
+- **Temporary rooms:** memberships, shared queues, playback snapshots, and uploaded files live in one server process. Rooms disappear when the last guest leaves or the process restarts. Theme choices are browser-local.
 - **Link-based access:** a room link is an invitation, not authenticated access. Passcodes, persistent rooms, durable bans, and a full moderation dashboard are not implemented.
 - **WebRTC reachability:** screen sharing uses direct peer connections with a public STUN server. There is no TURN relay, SFU, adaptive bitrate controller, or tested large-room video capacity. The 100-member cap is a membership limit.
 - **Camera & voice:** camera preview is local. Shared webcam feeds, spatial voice, per-peer volume control, and active voice meters are not implemented.
 - **Media adapters:** Twitch, arbitrary-page scraping, embedded-platform sync, hover thumbnails, and audio gain boosting are not implemented. Browser policies and source-server permissions can restrict playback.
-- **Extended customization:** shared queue editing, skip votes, background uploads, custom badges/emote packs, and GIF overlays are not implemented.
+- **Extended customization:** queue reordering/removal, skip votes, custom room backgrounds, custom badges/emote packs, and GIF overlays are not implemented.
 
 Before operating a public service, provision network relays as needed and add deployment-appropriate rate limits, session authentication, and durable moderation. Automated tests do not establish browser compatibility or production load capacity.
 
