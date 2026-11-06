@@ -238,6 +238,38 @@ io.on('connection', (s) => {
     publishMedia(room, r, item);
     reply?.({ ok: true });
   });
+  s.on('queue-remove', (id, reply) => {
+    const r = state();
+    if (!r || !r.members.has(s.id))
+      return reply?.({ error: 'Join this room before changing its queue.' });
+    if (r.locked && r.host !== s.id)
+      return reply?.({ error: 'Only the host can remove media while controls are locked.' });
+    const index = r.queue.findIndex((item) => item.id === id);
+    if (index < 0) return reply?.({ error: 'That item is no longer in this room.' });
+    const active = r.state?.mediaId === id;
+    r.queue.splice(index, 1);
+    media.removeItem(id, room);
+    if (active) {
+      if (r.ballot) {
+        clearTimeout(r.voteTimer);
+        r.ballot = null;
+        io.to(room).emit('vote-result', { passed: false });
+      }
+      const next = r.queue[Math.min(index, r.queue.length - 1)];
+      if (next) publishMedia(room, r, next);
+      else {
+        r.state = { source: '', title: '', mediaId: '', time: 0, playing: false, rate: 1 };
+        r.updatedAt = Date.now();
+        if (r.sharing) {
+          r.sharing = null;
+          io.to(room).emit('share-stop');
+        }
+        io.to(room).emit('queue-state', r.queue);
+        io.to(room).emit('sync', r.state);
+      }
+    } else io.to(room).emit('queue-state', r.queue);
+    reply?.({ ok: true });
+  });
   s.on('sync', (data) => {
     const r = state();
     if (!r || !r.members.has(s.id) || (r.locked && r.host !== s.id)) return;

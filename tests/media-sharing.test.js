@@ -172,13 +172,41 @@ test('shared uploads, queue edits, late joins, usernames, authorization, seeking
     assert.equal(twitchGuest.queue[0].id, twitch.item.id);
     assert.equal(twitchGuest.snapshot.source, twitch.item.url);
     assert.match((await request(other.socket, 'queue-select', item.id)).error, /no longer/);
+    assert.match((await request(other.socket, 'queue-remove', item.id)).error, /no longer/);
+    assert.match((await request(guest.socket, 'queue-remove', item.id)).error, /host/);
+    const reduced = event(guest.socket, 'queue-state', (queue) => queue.length === 2);
+    assert.equal((await request(host.socket, 'queue-remove', added.item.id)).ok, true);
+    await reduced;
+    const current = event(guest.socket, 'sync', (snapshot) => snapshot.mediaId === item.id);
+    guest.socket.emit('request-sync');
+    assert.equal((await current).source, item.url);
+    const switched = event(
+      guest.socket,
+      'sync',
+      (snapshot) => snapshot.source === 'https://example.com/second.mp4',
+    );
+    const oneItem = event(guest.socket, 'queue-state', (queue) => queue.length === 1);
+    assert.equal((await request(host.socket, 'queue-remove', item.id)).ok, true);
+    const remaining = await oneItem;
+    assert.equal((await switched).playing, false);
+    assert.equal((await fetch(origin + item.url)).status, 404);
+    const emptied = event(guest.socket, 'sync', (snapshot) => snapshot.source === '');
+    assert.equal((await request(host.socket, 'queue-remove', remaining[0].id)).ok, true);
+    assert.equal((await emptied).playing, false);
+    const replacementUpload = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + host.token, 'Content-Type': 'video/mp4' },
+      body: bytes,
+    });
+    assert.equal(replacementUpload.status, 201);
+    const replacement = (await replacementUpload.json()).item;
     host.socket.disconnect();
     guest.socket.disconnect();
     late.socket.disconnect();
     let status = 200;
     for (let attempt = 0; attempt < 30 && status !== 404; attempt++) {
       await delay(20);
-      status = (await fetch(origin + item.url)).status;
+      status = (await fetch(origin + replacement.url)).status;
     }
     assert.equal(status, 404);
   } finally {

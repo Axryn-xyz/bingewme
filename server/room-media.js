@@ -108,6 +108,12 @@ export function createRoomMedia({ app, io, rooms, publishMedia }) {
     });
   });
   return {
+    removeItem(id, code) {
+      const file = files.get(id);
+      if (file?.room !== code) return;
+      files.delete(id);
+      void rm(file.path, { force: true }).catch(() => {});
+    },
     removeRoom(code) {
       for (const [id, file] of files)
         if (file.room === code) {

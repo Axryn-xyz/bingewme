@@ -61,8 +61,7 @@ export function useWebRTCSync(
       pendingPlayback.current = { snapshot: data, receivedAt };
       const state = useStore.getState();
       const v = state.controller?.source === state.source ? state.controller : video.current;
-      const sourceChanged =
-        data.source && data.source !== 'local' && data.source !== useStore.getState().source;
+      const sourceChanged = data.source !== 'local' && data.source !== useStore.getState().source;
       if (sourceChanged) {
         useStore.getState().set({
           source: data.source,
@@ -203,6 +202,7 @@ export function useWebRTCSync(
     addToQueue: (url: string, title: string) =>
       request<{ item: QueueItem }>('queue-add', { url, title }),
     selectMedia: (id: string) => request<{ ok: boolean }>('queue-select', id),
+    removeMedia: (id: string) => request<{ ok: boolean }>('queue-remove', id),
     rename: (name: string) => request<{ name: string }>('rename', name),
   };
 }

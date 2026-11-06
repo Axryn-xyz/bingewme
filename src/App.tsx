@@ -826,21 +826,38 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                     : 'Your queue is empty. Add a video link to get started.'}
                 </p>
                 {s.queue.map((item, i) => (
-                  <button
-                    className={`queue-item ${s.mediaId === item.id ? 'current' : ''}`}
-                    key={item.id}
-                    onClick={() => !disabled && load(item)}
-                  >
-                    <div className="queue-thumb" style={{ backgroundImage: `url(${item.image})` }}>
-                      <span>{item.duration}</span>
-                    </div>
-                    <div>
-                      <small>{s.mediaId === item.id ? 'NOW PLAYING' : `0${i + 1} / UP NEXT`}</small>
-                      <strong>{item.title}</strong>
-                      <p>{item.subtitle}</p>
-                    </div>
-                    <Play size={14} />
-                  </button>
+                  <div className="queue-row" key={item.id}>
+                    <button
+                      className={`queue-item ${s.mediaId === item.id ? 'current' : ''}`}
+                      onClick={() => !disabled && load(item)}
+                    >
+                      <div
+                        className="queue-thumb"
+                        style={{ backgroundImage: `url(${item.image})` }}
+                      >
+                        <span>{item.duration}</span>
+                      </div>
+                      <div>
+                        <small>
+                          {s.mediaId === item.id ? 'NOW PLAYING' : `0${i + 1} / UP NEXT`}
+                        </small>
+                        <strong>{item.title}</strong>
+                        <p>{item.subtitle}</p>
+                      </div>
+                      <Play size={14} />
+                    </button>
+                    <button
+                      className="queue-remove"
+                      title={`Remove ${item.title}`}
+                      aria-label={`Remove ${item.title} from queue`}
+                      disabled={disabled || !sync.connected}
+                      onClick={() =>
+                        sync.removeMedia(item.id).catch((error) => toast(error.message))
+                      }
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 ))}
                 <button className="queue-add" onClick={() => setModal('media')}>
                   <Plus size={17} /> Add to the good times

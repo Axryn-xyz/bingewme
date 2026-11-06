@@ -668,3 +668,23 @@
 .video-stage:has(.twitch-player) {
   min-height: 300px;
 }
+.queue-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.queue-row .queue-item {
+  min-width: 0;
+  flex: 1;
+  border-bottom: 0;
+}
+.queue-remove {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  width: 30px;
+  height: 36px;
+}
+.queue-remove:hover {
+  color: var(--danger-text);
+}
