@@ -20,7 +20,7 @@ export function Controls({
   disabled,
 }: {
   video: React.RefObject<HTMLVideoElement | null>;
-  onChange: () => void;
+  onChange: (changes?: { time?: number; rate?: number }) => void;
   onResync: () => void;
   onNext: () => void;
   onToggle: () => void;
@@ -38,15 +38,16 @@ export function Controls({
         value={s.time}
         disabled={disabled}
         onChange={(e) => {
-          if (video.current) video.current.currentTime = +e.target.value;
+          const player = s.controller?.source === s.source ? s.controller : video.current;
+          if (player) player.currentTime = +e.target.value;
           s.set({ time: +e.target.value });
-          onChange();
+          onChange({ time: +e.target.value });
         }}
       />
       <div className="control-row">
         <button
           className="play-button"
-          disabled={disabled}
+          disabled={disabled && !s.needsInteraction}
           onClick={onToggle}
           title="Play / pause (Space)"
         >
@@ -81,7 +82,7 @@ export function Controls({
           value={s.rate}
           onChange={(e) => {
             s.set({ rate: +e.target.value });
-            onChange();
+            onChange({ rate: +e.target.value });
           }}
         >
           {[0.5, 0.75, 1, 1.25, 1.5, 2].map((n) => (
@@ -93,12 +94,16 @@ export function Controls({
           onClick={() => {
             video.current?.requestPictureInPicture?.().catch(() => {});
           }}
+          disabled={!!s.controller}
         >
           <PictureInPicture2 size={18} />
         </button>
         <button
           title="Fullscreen"
-          onClick={() => video.current?.parentElement?.requestFullscreen?.().catch(() => {})}
+          onClick={() => {
+            if (s.controller?.source === s.source) s.controller.requestFullscreen().catch(() => {});
+            else video.current?.parentElement?.requestFullscreen?.().catch(() => {});
+          }}
         >
           <Maximize size={18} />
         </button>

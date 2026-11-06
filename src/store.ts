@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { YouTubeController } from './lib/youtube';
 export interface Message {
   id: string;
   name: string;
@@ -26,6 +27,9 @@ interface State {
   title: string;
   mediaId: string;
   needsInteraction: boolean;
+  needsUnmute: boolean;
+  mediaError: string;
+  controller: YouTubeController | null;
   drawing: boolean;
   color: string;
   width: number;
@@ -46,6 +50,9 @@ export const useStore = create<State>((set) => ({
   title: '',
   mediaId: '',
   needsInteraction: false,
+  needsUnmute: false,
+  mediaError: '',
+  controller: null,
   drawing: false,
   color: '#ffe600',
   width: 4,

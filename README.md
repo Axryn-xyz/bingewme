@@ -24,13 +24,19 @@ Codes are reserved by the room server so active rooms cannot collide. Copy the c
 | Feature                           | What it does                                                                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Create & join**                 | Generate a unique room link or join with an existing link/code. Set an optional display name and leave a room from its header.                          |
-| **Watch in sync**                 | Share native-video play/pause, seeking, and playback speed. Correct timestamp drift above 1.5 seconds or request an immediate resync.                   |
-| **Bring your own media**          | Load direct video/audio URLs, HLS streams, a local file, or a screen share. YouTube and Vimeo open in their own embedded players.                       |
+| **Watch in sync**                 | Share YouTube and native-video play/pause, seeking, and playback speed. Correct timestamp drift above 1.5 seconds or request an immediate resync.       |
+| **Bring your own media**          | Load direct video/audio URLs, HLS streams, a local file, or a screen share. YouTube uses room playback controls; Vimeo uses its own controls.           |
 | **Your people, live**             | Room-scoped chat, floating emoji reactions, and a GIF picker. Add a server-side Giphy key for live GIF search.                                          |
 | **Draw on the moment**            | Annotate the screen with normalized canvas strokes broadcast to the room. Pick a brush color, clear your canvas, and let marks fade after four seconds. |
 | **Keep the remote under control** | Enable host-only playback controls or vote before pausing. Pause ballots last five seconds and require a majority.                                      |
 | **Keep watching**                 | Share a room-wide media queue, choose the next video, adjust volume and speed, or use fullscreen and picture-in-picture where supported.                |
 | **Make it yours**                 | Choose an accent and generate coordinated surfaces, borders, and text. Button foregrounds adapt for contrast; your palette persists in the browser.     |
+
+### YouTube that follows the room
+
+YouTube uses the IFrame Player API for shared play/pause, seeking, playback speed, timestamp correction, and late-join synchronization. The room toolbar and YouTube's own controls both publish playback changes. Watch links, short links, Shorts, live links, and embedded links are recognized.
+
+If the browser blocks audible autoplay, the player tries muted playback to stay in sync and displays **Enable sound**. Some browsers can still require one tap to start playback on a device; the app exposes that action without changing the whole room's playback state. Embedding-disabled or unavailable videos show an error in the player. See [YouTube's API and autoplay events](https://developers.google.com/youtube/iframe_api_reference).
 
 ### A palette that follows your color
 
@@ -44,7 +50,8 @@ Pink should feel pink all the way through. The theme engine derives a low-satura
 | HLS / `.m3u8`                              | Native HLS when available; lazy-loaded HLS.js otherwise | Native-player synchronization                                              |
 | Local file                                 | Temporary upload with HTTP range streaming              | One upload; guests stream the same file with shared playback controls      |
 | Screen share                               | Browser capture over WebRTC                             | One live broadcast; system audio depends on the browser and capture source |
-| YouTube & Vimeo                            | Embedded platform player                                | Platform controls only; playback is currently independent                  |
+| YouTube                                    | YouTube IFrame Player API                               | Shared playback, seek, speed, drift correction, and late joins             |
+| Vimeo                                      | Embedded platform player                                | Platform controls only; playback is currently independent                  |
 
 Local files are uploaded once to temporary storage on the room server. Guests receive the same playable URL and can stream or seek without selecting their own copy. Files are removed when the last guest leaves and become unavailable after a server restart. The application limit defaults to 1 GiB per file, configurable with `MAX_UPLOAD_BYTES`; your hosting provider can impose a lower request-size or disk limit. A file extension alone does not guarantee browser codec support.
 
@@ -174,7 +181,7 @@ The core watch-room experience is implemented. These limits matter when choosing
 - **Link-based access:** a room link is an invitation, not authenticated access. Passcodes, persistent rooms, durable bans, and a full moderation dashboard are not implemented.
 - **WebRTC reachability:** screen sharing uses direct peer connections with a public STUN server. There is no TURN relay, SFU, adaptive bitrate controller, or tested large-room video capacity. The 100-member cap is a membership limit.
 - **Camera & voice:** camera preview is local. Shared webcam feeds, spatial voice, per-peer volume control, and active voice meters are not implemented.
-- **Media adapters:** Twitch, arbitrary-page scraping, embedded-platform sync, hover thumbnails, and audio gain boosting are not implemented. Browser policies and source-server permissions can restrict playback.
+- **Media adapters:** Twitch, arbitrary-page scraping, Vimeo synchronization, hover thumbnails, and audio gain boosting are not implemented. Browser policies and source-server permissions can restrict playback.
 - **Extended customization:** queue reordering/removal, skip votes, custom room backgrounds, custom badges/emote packs, and GIF overlays are not implemented.
 
 Before operating a public service, provision network relays as needed and add deployment-appropriate rate limits, session authentication, and durable moderation. Automated tests do not establish browser compatibility or production load capacity.

@@ -1,11 +1,19 @@
 import { forwardRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { apiUrl } from '../../lib/backend';
+import { YouTubePlayer } from './YouTubePlayer';
+import { youtubeId, type YouTubeAction } from '../../lib/youtube';
 export const MediaEngine = forwardRef<
   HTMLVideoElement,
-  { stream: MediaStream | null; onEnded: () => void }
->(({ stream, onEnded }, ref) => {
-  const { source, volume, rate, set } = useStore();
+  { stream: MediaStream | null; onEnded: () => void; onAction: (action: YouTubeAction) => void }
+>(({ stream, onEnded, onAction }, ref) => {
+  const { source, volume, rate, set, controller } = useStore();
+  useEffect(() => {
+    if (controller?.source === source) {
+      controller.setVolume(volume);
+      controller.playbackRate = rate;
+    }
+  }, [controller, volume, rate, source]);
   useEffect(() => {
     const v = typeof ref === 'object' ? ref?.current : null;
     let dispose: (() => void) | undefined;
@@ -34,18 +42,16 @@ export const MediaEngine = forwardRef<
     }
   }, [stream, volume, rate, ref, source]);
   if (!source && !stream) return null;
-  const youtube = source.match(/(?:youtu.be\/|youtube.com\/watch\?v=)([\w-]+)/);
+  const youtube = !stream && youtubeId(source);
+  if (youtube)
+    return <YouTubePlayer source={source} id={youtube} onEnded={onEnded} onAction={onAction} />;
   const vimeo = source.match(/vimeo.com\/(\d+)/);
-  if (youtube || vimeo)
+  if (!stream && vimeo)
     return (
       <iframe
         className="video"
         title="Embedded video"
-        src={
-          youtube
-            ? `https://www.youtube.com/embed/${youtube[1]}?enablejsapi=1`
-            : `https://player.vimeo.com/video/${vimeo![1]}`
-        }
+        src={`https://player.vimeo.com/video/${vimeo[1]}`}
         allow="autoplay; fullscreen; picture-in-picture"
         allowFullScreen
       />

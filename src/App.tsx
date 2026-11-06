@@ -3,6 +3,7 @@ import { RoomLobby } from './components/RoomLobby';
 import { RoomEntry } from './components/RoomEntry';
 import { preparedName, clearEntry, saveName } from './lib/identity';
 import { apiUrl } from './lib/backend';
+import { youtubeId, type YouTubeAction } from './lib/youtube';
 import { parseRoomCode } from './lib/rooms';
 import { applyTheme, readAccent } from './lib/theme';
 import {
@@ -87,6 +88,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const file = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   const disabled = s.locked && !sync.host;
+  const isYouTube = !localStream && !sync.remoteStream && !!youtubeId(s.source);
   function toast(message: string) {
     setNotice(message);
     setTimeout(() => setNotice(''), 4000);
@@ -160,22 +162,42 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
     setLocalStream(null);
   }, [s.source]);
   function toggle() {
+    const player = s.controller?.source === s.source ? s.controller : video.current;
     if (s.needsInteraction) {
-      video.current
-        ?.play()
-        .then(() => s.set({ needsInteraction: false }))
+      const attempt =
+        s.controller?.source === s.source ? s.controller.enableAudio() : player?.play();
+      attempt
+        ?.then(() => s.set({ needsInteraction: false }))
         .catch(() => toast('Tap play again to allow video and audio.'));
       return;
     }
     if (disabled || (!s.source && !localStream && !sync.remoteStream)) return;
+    if (!player) {
+      toast('The player is still loading. Try play again in a moment.');
+      return;
+    }
     if (s.playing && s.vote) {
       sync.socket.current?.emit('vote-start');
       return;
     }
-    if (s.playing) video.current?.pause();
-    else video.current?.play().catch(() => toast('Add a playable video to get started.'));
+    if (s.playing) player.pause();
+    else player.play().catch(() => s.set({ needsInteraction: true }));
     s.set({ playing: !s.playing });
     sync.broadcast();
+  }
+  function youtubeAction(action: YouTubeAction) {
+    const state = useStore.getState();
+    if (disabled) {
+      sync.socket.current?.emit('request-sync');
+      return;
+    }
+    if (action.playing === false && state.playing && state.vote) {
+      sync.socket.current?.emit('vote-start');
+      sync.socket.current?.emit('request-sync');
+      return;
+    }
+    state.set(action);
+    sync.broadcast(action);
   }
   function load(item: QueueItem) {
     if (disabled) return;
@@ -381,12 +403,14 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 <MediaEngine
                   ref={video}
                   stream={localStream || sync.remoteStream}
+                  onAction={youtubeAction}
                   onEnded={() => {
                     if (sync.host) next();
                   }}
                 />
-                <div className="video-shade" />
+                {!isYouTube && <div className="video-shade" />}
                 {(s.source || localStream || sync.remoteStream) &&
+                  !isYouTube &&
                   (!s.playing || s.needsInteraction) && (
                     <button
                       className="center-play"
@@ -399,13 +423,15 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                     </button>
                   )}
                 {s.source || localStream || sync.remoteStream ? (
-                  <div className="film-label">
-                    <span className="film-pill">
-                      <Film size={12} /> YOUR MEDIA
-                    </span>
-                    <h2>{s.title || 'Live screen share'}</h2>
-                    <span>Grab a snack. Get comfortable.</span>
-                  </div>
+                  !isYouTube && (
+                    <div className="film-label">
+                      <span className="film-pill">
+                        <Film size={12} /> YOUR MEDIA
+                      </span>
+                      <h2>{s.title || 'Live screen share'}</h2>
+                      <span>Grab a snack. Get comfortable.</span>
+                    </div>
+                  )
                 ) : (
                   <div className="player-empty">
                     <span className="empty-screen-icon">
@@ -448,6 +474,29 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                   </div>
                 )}
               </div>
+              {(s.mediaError || s.needsUnmute || s.needsInteraction) && (
+                <div className="player-notice" role="status">
+                  <span>
+                    {s.mediaError ||
+                      (s.needsInteraction
+                        ? 'Tap once to allow playback on this device.'
+                        : 'Playing in sync with sound off on this device.')}
+                  </span>
+                  {!s.mediaError && (
+                    <button
+                      className="outline-btn"
+                      onClick={() => {
+                        if (s.controller?.source === s.source) {
+                          if (!s.volume) s.set({ volume: 0.75 });
+                          s.controller.enableAudio().catch(() => s.set({ needsInteraction: true }));
+                        } else toggle();
+                      }}
+                    >
+                      {s.needsUnmute ? 'Enable sound' : 'Start playback'}
+                    </button>
+                  )}
+                </div>
+              )}
               <Controls
                 video={video}
                 disabled={disabled || (!s.source && !localStream && !sync.remoteStream)}
@@ -991,8 +1040,8 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                       onKeyDown={(e) => e.key === 'Enter' && addLink()}
                     />
                     <p className="help-text">
-                      Direct MP4, WebM, HLS streams, YouTube, and Vimeo. Embedded platforms manage
-                      their own playback.
+                      Direct MP4, WebM, HLS streams, YouTube, and Vimeo. YouTube syncs with the
+                      room; Vimeo uses its own playback controls.
                     </p>
                     <button className="yellow-btn full" onClick={addLink}>
                       Add to the party <ArrowRight size={16} />

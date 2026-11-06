@@ -13,6 +13,7 @@ export function useWebRTCSync(
   const nameRef = useRef(name);
   nameRef.current = name;
   const source = useStore((state) => state.source);
+  const controller = useStore((state) => state.controller);
   const pendingPlayback = useRef<{ snapshot: PlaybackSnapshot; receivedAt: number } | null>(null);
   const [uploadToken, setUploadToken] = useState('');
   const [connected, setConnected] = useState(false);
@@ -58,7 +59,8 @@ export function useWebRTCSync(
     s.on('sync', (data: PlaybackSnapshot) => {
       const receivedAt = performance.now();
       pendingPlayback.current = { snapshot: data, receivedAt };
-      const v = video.current;
+      const state = useStore.getState();
+      const v = state.controller?.source === state.source ? state.controller : video.current;
       const sourceChanged =
         data.source && data.source !== 'local' && data.source !== useStore.getState().source;
       if (sourceChanged) {
@@ -69,6 +71,8 @@ export function useWebRTCSync(
           time: 0,
           duration: 0,
           needsInteraction: false,
+          needsUnmute: false,
+          mediaError: '',
         });
         setRemoteStream(null);
       } else if (v && v.readyState >= 1) {
@@ -128,7 +132,8 @@ export function useWebRTCSync(
     };
   }, [room, video]);
   useEffect(() => {
-    const v = video.current;
+    const current = useStore.getState();
+    const v = current.controller?.source === source ? current.controller : video.current;
     if (!v) return;
     const apply = () => {
       const pending = pendingPlayback.current;
@@ -137,10 +142,11 @@ export function useWebRTCSync(
           .then(() => useStore.getState().set({ needsInteraction: false }))
           .catch(() => useStore.getState().set({ needsInteraction: true }));
     };
-    v.addEventListener('loadedmetadata', apply);
+    const native = video.current;
+    native?.addEventListener('loadedmetadata', apply);
     if (v.readyState >= 1) apply();
-    return () => v.removeEventListener('loadedmetadata', apply);
-  }, [source, video]);
+    return () => native?.removeEventListener('loadedmetadata', apply);
+  }, [source, video, controller]);
   function request<T>(event: string, payload: unknown): Promise<T> {
     return new Promise((resolve, reject) => {
       if (!socket.current?.connected)
@@ -154,15 +160,20 @@ export function useWebRTCSync(
         });
     });
   }
-  const broadcast = () => {
+  const broadcast = (
+    changes: Partial<Pick<PlaybackSnapshot, 'time' | 'rate' | 'playing'>> = {},
+  ) => {
     const st = useStore.getState();
+    const observedTime =
+      st.controller?.source === st.source ? st.controller.currentTime : video.current?.currentTime;
     socket.current?.emit('sync', {
-      time: video.current?.currentTime || 0,
+      time: observedTime ?? st.time ?? 0,
       playing: st.playing,
       rate: st.rate,
       source: st.source.startsWith('blob:') ? 'local' : st.source,
       title: st.title,
       mediaId: st.mediaId,
+      ...changes,
     });
   };
   useEffect(() => {
