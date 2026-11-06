@@ -11,9 +11,7 @@ export function createRoomMedia({ app, io, rooms, publishMedia }) {
   const directory = join(tmpdir(), `bingewme-${randomUUID()}`);
   const configuredLimit = Number(process.env.MAX_UPLOAD_BYTES);
   const maxBytes =
-    Number.isSafeInteger(configuredLimit) && configuredLimit > 0
-      ? configuredLimit
-      : 2 * 1024 * 1024 * 1024;
+    Number.isSafeInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 10 * 1024 ** 3;
   const activeUploads = new Set();
   app.get('/api/media/config', (_, res) =>
     res.set('Cache-Control', 'no-store').json({ maxUploadBytes: maxBytes }),

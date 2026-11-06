@@ -38,7 +38,7 @@ test('room chat, playback, host lock, resync and majority vote', async () => {
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { status: 'ok' });
     const uploadLimits = await (await fetch('http://localhost:3002/api/media/config')).json();
-    assert.ok(uploadLimits.maxUploadBytes >= 1.5 * 1024 ** 3);
+    assert.equal(uploadLimits.maxUploadBytes, 10 * 1024 ** 3);
     assert.equal(health.headers.get('access-control-allow-origin'), 'https://binge.axryn.xyz');
     const deniedOrigin = await fetch('http://localhost:3002/api/health', {
       headers: { Origin: 'https://unrelated.example' },

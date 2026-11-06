@@ -256,7 +256,8 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
         abort.signal,
         setUploadStatus,
       );
-      void stageFile(f).catch(() => {});
+      // Large uploads already live on the room server; avoid duplicating them in browser storage.
+      if (f.size <= 100 * 1024 ** 2) void stageFile(f).catch(() => {});
       setModal(null);
       toast('Video added. Everyone in the room can watch it now.');
     } catch (error) {
