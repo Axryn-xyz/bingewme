@@ -41,3 +41,17 @@ test('autoplay rejection remains actionable; live streams do not seek', async ()
   );
   assert.equal(video.currentTime, 8);
 });
+
+test('Twitch live players receive play state without unsupported seeking', async () => {
+  const video = {
+    currentTime: 0,
+    duration: 0,
+    isLive: true,
+    srcObject: null,
+    playbackRate: 1,
+    play: async () => {},
+    pause: () => {},
+  };
+  await applyPlayback(video, { time: 100, playing: true, rate: 1 }, 0, 10000);
+  assert.equal(video.currentTime, 0);
+});

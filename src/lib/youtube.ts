@@ -58,6 +58,8 @@ export class YouTubeController implements PlaybackTarget {
   private callbacks: YouTubeCallbacks;
   readonly srcObject = null;
   readonly readyState = 1;
+  isLive = false;
+  supportsPlaybackRate = true;
   private expectedState: number | null = null;
   private expectedRate: number | null = null;
   private seekUntil = 0;
@@ -213,6 +215,11 @@ export class YouTubeController implements PlaybackTarget {
       if (Math.abs(time - expected) > 1.5) this.callbacks.action({ time });
     }
     this.lastTick = { time, at: now, playing, rate };
+  }
+  onSeek() {
+    if (performance.now() <= this.seekUntil) return;
+    this.lastTick = null;
+    this.callbacks.action({ time: this.currentTime });
   }
   destroy() {
     this.disposed = true;

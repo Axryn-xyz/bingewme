@@ -18,7 +18,12 @@ const event = (s, name, matches = () => true) =>
   });
 test('room chat, playback, host lock, resync and majority vote', async () => {
   const proc = spawn(process.execPath, ['server/index.js'], {
-    env: { ...process.env, PORT: '3002', FRONTEND_ORIGINS: 'https://binge.axryn.xyz' },
+    env: {
+      ...process.env,
+      PORT: '3002',
+      FRONTEND_ORIGINS: 'https://binge.axryn.xyz',
+      MAX_UPLOAD_BYTES: '',
+    },
     stdio: 'pipe',
   });
   const clients = [];
@@ -32,6 +37,8 @@ test('room chat, playback, host lock, resync and majority vote', async () => {
     });
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { status: 'ok' });
+    const uploadLimits = await (await fetch('http://localhost:3002/api/media/config')).json();
+    assert.ok(uploadLimits.maxUploadBytes >= 1.5 * 1024 ** 3);
     assert.equal(health.headers.get('access-control-allow-origin'), 'https://binge.axryn.xyz');
     const deniedOrigin = await fetch('http://localhost:3002/api/health', {
       headers: { Origin: 'https://unrelated.example' },

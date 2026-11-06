@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 import { allocateRoomCode, createRoomState } from './room-codes.js';
 import { createRoomMedia } from './room-media.js';
+import { resolveMedia } from './media-resolver.js';
 const app = express();
 const http = createServer(app);
 const frontendOrigins = (process.env.FRONTEND_ORIGINS || '')
@@ -191,19 +192,30 @@ io.on('connection', (s) => {
     update();
     reply?.({ name: clean });
   });
-  s.on('queue-add', (data, reply) => {
+  s.on('queue-add', async (data, reply) => {
     const r = state();
     if (!r || (r.locked && r.host !== s.id))
       return reply?.({ error: 'Only the host can add media while controls are locked.' });
     if (r.queue.length >= 100) return reply?.({ error: 'The room queue is full.' });
+    if (s.data.resolving) return reply?.({ error: 'Your previous link is still being checked.' });
+    s.data.resolving = true;
     try {
       const url = new URL(data.url);
       if (!['http:', 'https:'].includes(url.protocol) || url.href.length > 4096) throw Error();
+      const resolved = await resolveMedia(url.href);
+      if (state() !== r || !r.members.has(s.id))
+        return reply?.({ error: 'You are no longer in this room.' });
+      if (r.locked && r.host !== s.id)
+        return reply?.({ error: 'Playback controls were locked while checking this link.' });
+      if (r.queue.length >= 100) return reply?.({ error: 'The room queue is full.' });
       const item = {
         id: randomUUID(),
-        title: String(data.title || url.hostname).slice(0, 200),
+        title: String(resolved.title || data.title || url.hostname).slice(0, 200),
         subtitle: url.hostname,
-        url: url.href,
+        url: resolved.url,
+        originalUrl: url.href,
+        provider: resolved.provider,
+        mediaType: resolved.mediaType,
         image: '',
         duration: 'VIDEO',
         kind: 'url',
@@ -211,8 +223,10 @@ io.on('connection', (s) => {
       r.queue.push(item);
       publishMedia(room, r, item);
       reply?.({ item });
-    } catch {
-      reply?.({ error: 'Enter a valid HTTP or HTTPS media link.' });
+    } catch (error) {
+      reply?.({ error: error.message || 'Enter a valid HTTP or HTTPS media link.' });
+    } finally {
+      s.data.resolving = false;
     }
   });
   s.on('queue-select', (id, reply) => {

@@ -13,8 +13,11 @@ export function createRoomMedia({ app, io, rooms, publishMedia }) {
   const maxBytes =
     Number.isSafeInteger(configuredLimit) && configuredLimit > 0
       ? configuredLimit
-      : 1024 * 1024 * 1024;
+      : 2 * 1024 * 1024 * 1024;
   const activeUploads = new Set();
+  app.get('/api/media/config', (_, res) =>
+    res.set('Cache-Control', 'no-store').json({ maxUploadBytes: maxBytes }),
+  );
   app.post('/api/rooms/:code/media', async (req, res) => {
     const room = rooms.get(req.params.code);
     const token = req.headers.authorization?.replace(/^Bearer /, '');

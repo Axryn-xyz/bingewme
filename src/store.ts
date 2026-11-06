@@ -15,6 +15,9 @@ export interface QueueItem {
   image: string;
   duration: string;
   kind?: 'url' | 'upload';
+  mediaType?: 'video' | 'audio' | 'hls' | 'embed';
+  provider?: string;
+  originalUrl?: string;
 }
 export const initialQueue: QueueItem[] = [];
 interface State {

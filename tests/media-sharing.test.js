@@ -39,6 +39,8 @@ test('shared uploads, queue edits, late joins, usernames, authorization, seeking
       proc.stdout.once('data', resolve);
       proc.once('error', reject);
     });
+    const limits = await (await fetch(origin + '/api/media/config')).json();
+    assert.equal(limits.maxUploadBytes, 1024);
     const create = async () => {
       const response = await fetch(origin + '/api/rooms', { method: 'POST' });
       return (await response.json()).code;
@@ -160,6 +162,15 @@ test('shared uploads, queue edits, late joins, usernames, authorization, seeking
     assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(4, 12));
     assert.deepEqual(Buffer.from(await (await fetch(origin + item.url)).arrayBuffer()), bytes);
     assert.equal(other.queue.length, 0);
+    const twitch = await request(other.socket, 'queue-add', {
+      url: 'https://player.twitch.tv/?video=v12345678&parent=old.example',
+      title: 'Twitch VOD',
+    });
+    assert.equal(twitch.item.url, 'https://www.twitch.tv/videos/12345678');
+    assert.equal(twitch.item.provider, 'twitch');
+    const twitchGuest = await join('Twitch guest', otherCode, true);
+    assert.equal(twitchGuest.queue[0].id, twitch.item.id);
+    assert.equal(twitchGuest.snapshot.source, twitch.item.url);
     assert.match((await request(other.socket, 'queue-select', item.id)).error, /no longer/);
     host.socket.disconnect();
     guest.socket.disconnect();

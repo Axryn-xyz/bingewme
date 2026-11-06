@@ -36,7 +36,7 @@ export function Controls({
         min="0"
         max={Number.isFinite(s.duration) ? s.duration : 0}
         value={s.time}
-        disabled={disabled}
+        disabled={disabled || s.controller?.isLive}
         onChange={(e) => {
           const player = s.controller?.source === s.source ? s.controller : video.current;
           if (player) player.currentTime = +e.target.value;
@@ -78,7 +78,7 @@ export function Controls({
         </button>
         <select
           aria-label="Playback speed"
-          disabled={disabled}
+          disabled={disabled || s.controller?.supportsPlaybackRate === false}
           value={s.rate}
           onChange={(e) => {
             s.set({ rate: +e.target.value });

@@ -509,3 +509,162 @@
   color: var(--accent-text);
   flex-shrink: 0;
 }
+.upload-progress {
+  padding: 20px;
+  margin: 12px 0 20px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-base);
+}
+.upload-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.upload-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.upload-heading strong {
+  font-size: 12px;
+}
+.upload-heading p {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.upload-live-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: var(--surface-active);
+  color: var(--accent-text);
+  animation: upload-breathe 1.8s ease-in-out infinite;
+}
+.upload-heading > button {
+  color: var(--text-muted);
+  padding: 4px;
+}
+.upload-numbers {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 20px 0 13px;
+  gap: 12px;
+  font-family: monospace;
+}
+.upload-percent {
+  display: inline-block;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -2px;
+  color: var(--accent-text);
+  animation: upload-pop 0.18s ease-out;
+}
+.upload-percent small {
+  font-size: 16px;
+  margin-left: 4px;
+  letter-spacing: 0;
+}
+.upload-numbers > span:last-child {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.upload-numbers > span:last-child > span {
+  color: var(--text-muted);
+}
+.upload-track {
+  height: 9px;
+  background: var(--surface-active);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.upload-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent-text);
+  transform-origin: left;
+  transition: transform 0.15s linear;
+}
+.upload-pulse {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent-soft) 40%, transparent),
+    transparent
+  );
+  animation: upload-sweep 1.7s ease-in-out infinite;
+}
+.upload-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  font-family: monospace;
+  font-size: 8px;
+  color: var(--text-muted);
+}
+.upload-stats > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.upload-stats i {
+  width: 4px;
+  height: 4px;
+  background: var(--accent-text);
+  border-radius: 50%;
+  animation: upload-breathe 1.2s ease-in-out infinite;
+}
+@keyframes upload-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.93);
+  }
+}
+@keyframes upload-pop {
+  from {
+    opacity: 0.6;
+    transform: translateY(4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes upload-sweep {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    transform: translateX(350%);
+    opacity: 0;
+  }
+}
+.twitch-player > div,
+.twitch-player iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.video-stage:has(.twitch-player) {
+  min-height: 300px;
+}

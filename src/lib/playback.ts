@@ -12,6 +12,7 @@ export interface PlaybackTarget {
   duration: number;
   playbackRate: number;
   readonly srcObject: unknown;
+  readonly isLive?: boolean;
   play: () => Promise<void>;
   pause: () => void;
 }
@@ -23,7 +24,7 @@ export function applyPlayback(
   now = performance.now(),
 ): Promise<void> {
   video.playbackRate = snapshot.rate;
-  if (!video.srcObject) {
+  if (!video.srcObject && !video.isLive) {
     let time =
       snapshot.time +
       (snapshot.playing ? (Math.max(0, now - receivedAt) / 1000) * snapshot.rate : 0);

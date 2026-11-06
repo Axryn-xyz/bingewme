@@ -3,11 +3,14 @@ import { useStore } from '../../store';
 import { apiUrl } from '../../lib/backend';
 import { YouTubePlayer } from './YouTubePlayer';
 import { youtubeId, type YouTubeAction } from '../../lib/youtube';
+import { twitchSource } from '../../lib/twitch';
+import { TwitchPlayer } from './TwitchPlayer';
 export const MediaEngine = forwardRef<
   HTMLVideoElement,
   { stream: MediaStream | null; onEnded: () => void; onAction: (action: YouTubeAction) => void }
 >(({ stream, onEnded, onAction }, ref) => {
-  const { source, volume, rate, set, controller } = useStore();
+  const { source, volume, rate, set, controller, queue, mediaId } = useStore();
+  const mediaType = queue.find((item) => item.id === mediaId)?.mediaType;
   useEffect(() => {
     if (controller?.source === source) {
       controller.setVolume(volume);
@@ -18,7 +21,11 @@ export const MediaEngine = forwardRef<
     const v = typeof ref === 'object' ? ref?.current : null;
     let dispose: (() => void) | undefined;
     let cancelled = false;
-    if (v && /\.m3u8(?:[?#]|$)/i.test(source) && !v.canPlayType('application/vnd.apple.mpegurl')) {
+    if (
+      v &&
+      (mediaType === 'hls' || /\.m3u8(?:[?#]|$)/i.test(source)) &&
+      !v.canPlayType('application/vnd.apple.mpegurl')
+    ) {
       import('hls.js').then(({ default: Hls }) => {
         if (cancelled || !Hls.isSupported()) return;
         const hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60 });
@@ -31,7 +38,7 @@ export const MediaEngine = forwardRef<
       cancelled = true;
       dispose?.();
     };
-  }, [source, ref]);
+  }, [source, ref, mediaType]);
   useEffect(() => {
     const v = typeof ref === 'object' ? ref?.current : null;
     if (v) {
@@ -45,6 +52,8 @@ export const MediaEngine = forwardRef<
   const youtube = !stream && youtubeId(source);
   if (youtube)
     return <YouTubePlayer source={source} id={youtube} onEnded={onEnded} onAction={onAction} />;
+  if (!stream && twitchSource(source))
+    return <TwitchPlayer source={source} onAction={onAction} onEnded={onEnded} />;
   const vimeo = source.match(/vimeo.com\/(\d+)/);
   if (!stream && vimeo)
     return (
@@ -68,6 +77,12 @@ export const MediaEngine = forwardRef<
       onPlay={() => set({ playing: true })}
       onPause={() => set({ playing: false })}
       onEnded={onEnded}
+      onError={() =>
+        set({
+          mediaError:
+            'This video could not be loaded or decoded by your browser. Try a supported MP4/WebM file, a direct media link, or screen share.',
+        })
+      }
     />
   );
 });

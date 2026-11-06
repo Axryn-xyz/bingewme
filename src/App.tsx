@@ -3,7 +3,10 @@ import { RoomLobby } from './components/RoomLobby';
 import { RoomEntry } from './components/RoomEntry';
 import { preparedName, clearEntry, saveName } from './lib/identity';
 import { apiUrl } from './lib/backend';
+import { UploadProgress } from './components/player/UploadProgress';
+import { uploadFile, formatBytes, type UploadProgress as UploadStatus } from './lib/upload';
 import { youtubeId, type YouTubeAction } from './lib/youtube';
+import { twitchSource } from './lib/twitch';
 import { parseRoomCode } from './lib/rooms';
 import { applyTheme, readAccent } from './lib/theme';
 import {
@@ -67,12 +70,15 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const [name, setName] = useState(initialName);
   const [nameDraft, setNameDraft] = useState(initialName);
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
+  const [uploadName, setUploadName] = useState('');
   const uploadAbort = useRef<AbortController | null>(null);
   const sync = useWebRTCSync(room, name, video);
   const [tab, setTab] = useState('chat');
   const [modal, setModal] = useState<'media' | 'invite' | null>(null);
   const [mode, setMode] = useState('link');
   const [url, setUrl] = useState('');
+  const [addingLink, setAddingLink] = useState(false);
   const [text, setText] = useState('');
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [clearKey, setClearKey] = useState(0);
@@ -88,7 +94,11 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const file = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   const disabled = s.locked && !sync.host;
-  const isYouTube = !localStream && !sync.remoteStream && !!youtubeId(s.source);
+  const twitch = twitchSource(s.source);
+  const isEmbedded =
+    !localStream &&
+    !sync.remoteStream &&
+    (!!youtubeId(s.source) || !!twitch || /vimeo\.com\//.test(s.source));
   function toast(message: string) {
     setNotice(message);
     setTimeout(() => setNotice(''), 4000);
@@ -215,23 +225,37 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
       return;
     }
     setUploading(true);
+    setUploadName(f.name);
+    setUploadStatus({
+      loaded: 0,
+      total: f.size,
+      percent: 0,
+      bytesPerSecond: 0,
+      remainingSeconds: null,
+      phase: 'checking',
+    });
     const abort = new AbortController();
     uploadAbort.current = abort;
     try {
-      const response = await fetch(
+      const config = await fetch(apiUrl('/api/media/config'), { signal: abort.signal });
+      if (!config.ok || !config.headers.get('content-type')?.includes('application/json'))
+        throw new Error(
+          'The room server needs the latest upload update. Redeploy it, then rejoin the room.',
+        );
+      const { maxUploadBytes } = await config.json();
+      if (!Number.isFinite(maxUploadBytes) || maxUploadBytes <= 0)
+        throw new Error('The room server returned an invalid file size limit.');
+      if (f.size > maxUploadBytes)
+        throw new Error(
+          `This file is ${formatBytes(f.size)}. The room server allows up to ${formatBytes(maxUploadBytes)} per file.`,
+        );
+      await uploadFile(
         apiUrl(`/api/rooms/${room}/media?name=${encodeURIComponent(f.name)}`),
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${sync.uploadToken}`,
-            'Content-Type': f.type || 'application/octet-stream',
-          },
-          body: f,
-          signal: abort.signal,
-        },
+        f,
+        sync.uploadToken,
+        abort.signal,
+        setUploadStatus,
       );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Upload failed.');
       void stageFile(f).catch(() => {});
       setModal(null);
       toast('Video added. Everyone in the room can watch it now.');
@@ -240,11 +264,14 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
         toast(error instanceof Error ? error.message : 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
+      setUploadStatus(null);
       uploadAbort.current = null;
       if (file.current) file.current.value = '';
     }
   }
   async function addLink() {
+    if (addingLink) return;
+    setAddingLink(true);
     try {
       const parsed = new URL(url);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw Error();
@@ -254,6 +281,8 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
       setUrl('');
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Enter a valid http or https video URL.');
+    } finally {
+      setAddingLink(false);
     }
   }
   async function share() {
@@ -303,6 +332,16 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
     setPicker(false);
   }
   const participants = sync.members.length ? sync.members : [{ id: 'local', name: 'You' }];
+  const uploadPanel = uploadStatus && (
+    <UploadProgress
+      progress={uploadStatus}
+      name={uploadName}
+      onCancel={() => {
+        uploadAbort.current?.abort();
+        toast('Upload cancelled.');
+      }}
+    />
+  );
   return (
     <div className="app">
       <header className="header">
@@ -376,6 +415,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
               'The room connection is unavailable. Chat and playback sync will reconnect automatically when the service is back online.'}
           </div>
         )}
+        {uploadStatus && !(modal === 'media' && mode === 'local') && uploadPanel}
         <div className="workspace">
           <section className="watch-column">
             <div className="player-shell">
@@ -408,9 +448,9 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                     if (sync.host) next();
                   }}
                 />
-                {!isYouTube && <div className="video-shade" />}
+                {!isEmbedded && <div className="video-shade" />}
                 {(s.source || localStream || sync.remoteStream) &&
-                  !isYouTube &&
+                  !isEmbedded &&
                   (!s.playing || s.needsInteraction) && (
                     <button
                       className="center-play"
@@ -423,7 +463,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                     </button>
                   )}
                 {s.source || localStream || sync.remoteStream ? (
-                  !isYouTube && (
+                  !isEmbedded && (
                     <div className="film-label">
                       <span className="film-pill">
                         <Film size={12} /> YOUR MEDIA
@@ -497,9 +537,19 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                   )}
                 </div>
               )}
+              {twitch?.kind === 'clip' && (
+                <div className="player-notice">
+                  Twitch clips use their own playback controls. Use screen share if everyone needs
+                  the exact same moment.
+                </div>
+              )}
               <Controls
                 video={video}
-                disabled={disabled || (!s.source && !localStream && !sync.remoteStream)}
+                disabled={
+                  disabled ||
+                  (!s.source && !localStream && !sync.remoteStream) ||
+                  (isEmbedded && s.controller?.source !== s.source)
+                }
                 onToggle={toggle}
                 onNext={next}
                 onChange={sync.broadcast}
@@ -1043,27 +1093,32 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                       Direct MP4, WebM, HLS streams, YouTube, and Vimeo. YouTube syncs with the
                       room; Vimeo uses its own playback controls.
                     </p>
-                    <button className="yellow-btn full" onClick={addLink}>
-                      Add to the party <ArrowRight size={16} />
+                    <button className="yellow-btn full" onClick={addLink} disabled={addingLink}>
+                      {addingLink ? 'Finding the player…' : 'Find player & add'}{' '}
+                      <ArrowRight size={16} />
                     </button>
                   </>
                 ) : mode === 'local' ? (
-                  <button
-                    className="drop-zone"
-                    disabled={uploading || !sync.connected}
-                    onClick={() => file.current?.click()}
-                  >
-                    <Upload size={30} />
-                    <strong>
-                      {uploading ? 'Uploading for the room…' : 'Upload once. Everyone watches.'}
-                    </strong>
-                    <span>Choose a video or audio file</span>
-                    <small>
-                      {uploading
-                        ? 'Keep this tab open until the upload finishes.'
-                        : 'Shared temporarily with the people in this room.'}
-                    </small>
-                  </button>
+                  uploadStatus ? (
+                    uploadPanel
+                  ) : (
+                    <button
+                      className="drop-zone"
+                      disabled={uploading || !sync.connected}
+                      onClick={() => file.current?.click()}
+                    >
+                      <Upload size={30} />
+                      <strong>
+                        {uploading ? 'Uploading for the room…' : 'Upload once. Everyone watches.'}
+                      </strong>
+                      <span>Choose a video or audio file</span>
+                      <small>
+                        {uploading
+                          ? 'Keep this tab open until the upload finishes.'
+                          : 'Shared temporarily with the people in this room.'}
+                      </small>
+                    </button>
+                  )
                 ) : (
                   <div className="screen-info">
                     <MonitorUp size={35} />

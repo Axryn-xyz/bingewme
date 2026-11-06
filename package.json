@@ -21,8 +21,10 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.5",
+    "cheerio": "^1.2.0",
     "express": "^4.21.2",
     "hls.js": "^1.7.4",
+    "ipaddr.js": "^2.5.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
