@@ -65,7 +65,27 @@ The dev command starts Vite on port `5173` and the room server on `3001`. Vite p
 
 Binge W Me ships as **one Node service**: Express serves the built frontend and Socket.io handles the live room connection on the same port.
 
-### Node service
+### Vercel frontend + room server
+
+The included `vercel.json` configures the Vite build and rewrites `/party/<code>` to the React app, so creating, joining, and refreshing room links work on Vercel. API and asset paths are not rewritten to HTML.
+
+**Deploying the Vite frontend does not start `server/index.js`.** With the current in-memory room implementation, use one running Node service for room coordination. Vercel's WebSocket support alone does not share in-memory rooms across function instances; an all-Vercel backend would also need distributed room state and pub/sub coordination.
+
+To keep the frontend on Vercel:
+
+1. Deploy this repository as a Node web service. The included Render Blueprint preconfigures its build command and health check:
+
+   [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/havioo/bingewme)
+
+2. On that service, set `FRONTEND_ORIGINS` to your exact frontend origin, such as `https://binge.axryn.xyz`. Separate multiple origins with commas. The Blueprint already allows that domain.
+3. In Vercel → Project → Settings → Environment Variables, add `VITE_ROOM_SERVER_URL` with the Node service's HTTPS URL. Use the service origin without an API path.
+4. Redeploy Vercel. The public backend URL is included at build time; changing it requires a fresh build.
+
+Visit the Node service's `/api/health` endpoint to check that it returns `{"status":"ok"}`. The free Blueprint is intended for trying the app; idle spin-downs or service restarts can end temporary rooms. Alternatively, host the entire app on the Node service and point your domain there; then no separate frontend/backend URL setting is needed.
+
+See [Vercel's Vite routing documentation](https://vercel.com/docs/frameworks/frontend/vite) and [WebSocket state guidance](https://vercel.com/docs/functions/websockets) for the deployment behavior behind this setup.
+
+### Single Node service
 
 Set the runtime to Node.js 24 or later, then use:
 
@@ -97,6 +117,8 @@ docker run --rm --init -p 3001:3001 --env-file .env bingewme
 Create `.env` from `.env.example` first, or omit `--env-file .env` to use the defaults. Place the container behind your HTTPS reverse proxy and forward WebSocket upgrades to the same service.
 
 ### Environment
+
+For split hosting, set `VITE_ROOM_SERVER_URL` on the frontend before building and `FRONTEND_ORIGINS` on the Node server. Both are public URL settings. Leave them empty when hosting the whole app on one Node service.
 
 | Variable        | Required | Purpose                                                                                              |
 | --------------- | -------- | ---------------------------------------------------------------------------------------------------- |

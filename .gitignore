@@ -9,6 +9,7 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+.vercel/
 tmp/
 temp/
 test-results/

@@ -281,7 +281,11 @@ function WatchRoom({ room }: { room: string }) {
               <span className="meta-divider" />
               <Lock size={12} /> Invite-only link <span className="meta-divider" />
               <span className="connection-dot" />{' '}
-              {sync.connected ? 'Connected & in sync' : 'Connecting to room'}
+              {sync.connected
+                ? 'Connected & in sync'
+                : sync.connectionError
+                  ? 'Room connection unavailable'
+                  : 'Connecting to room'}
             </div>
           </div>
           <div className="room-actions">
@@ -301,6 +305,12 @@ function WatchRoom({ room }: { room: string }) {
             </button>
           </div>
         </div>
+        {sync.connectionError && (
+          <div className="connection-warning" role="alert">
+            The room connection is unavailable. Chat and playback sync will reconnect automatically
+            when the service is back online.
+          </div>
+        )}
         <div className="workspace">
           <section className="watch-column">
             <div className="player-shell">

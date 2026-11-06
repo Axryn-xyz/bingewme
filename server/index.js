@@ -4,8 +4,25 @@ import { Server } from 'socket.io';
 import { randomUUID } from 'node:crypto';
 const app = express();
 const http = createServer(app);
-const io = new Server(http, { maxHttpBufferSize: 100000 });
+const frontendOrigins = (process.env.FRONTEND_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const io = new Server(http, {
+  maxHttpBufferSize: 100000,
+  cors: { origin: frontendOrigins, methods: ['GET', 'POST'] },
+});
 const rooms = new Map();
+app.use('/api', (req, res, next) => {
+  res.vary('Origin');
+  if (frontendOrigins.includes(req.headers.origin)) {
+    res.set('Access-Control-Allow-Origin', req.headers.origin);
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 app.get('/api/gifs', async (req, res) => {
   const query = String(req.query.q || '').slice(0, 80);
   const fallback = [

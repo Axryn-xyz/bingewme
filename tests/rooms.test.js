@@ -12,7 +12,7 @@ const event = (s, name) =>
   });
 test('room chat, playback, host lock, resync and majority vote', async () => {
   const proc = spawn(process.execPath, ['server/index.js'], {
-    env: { ...process.env, PORT: '3002' },
+    env: { ...process.env, PORT: '3002', FRONTEND_ORIGINS: 'https://binge.axryn.xyz' },
     stdio: 'pipe',
   });
   const clients = [];
@@ -21,6 +21,16 @@ test('room chat, playback, host lock, resync and majority vote', async () => {
       proc.stdout.once('data', resolve);
       proc.once('error', reject);
     });
+    const health = await fetch('http://localhost:3002/api/health', {
+      headers: { Origin: 'https://binge.axryn.xyz' },
+    });
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { status: 'ok' });
+    assert.equal(health.headers.get('access-control-allow-origin'), 'https://binge.axryn.xyz');
+    const deniedOrigin = await fetch('http://localhost:3002/api/health', {
+      headers: { Origin: 'https://unrelated.example' },
+    });
+    assert.equal(deniedOrigin.headers.get('access-control-allow-origin'), null);
     async function join(name, room = 'integration-test') {
       const socket = io('http://localhost:3002', { transports: ['websocket'] });
       clients.push(socket);

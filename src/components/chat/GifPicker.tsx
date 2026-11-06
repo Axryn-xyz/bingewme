@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Search, X } from 'lucide-react';
+import { apiUrl } from '../../lib/backend';
 type Gif = { id: string; title: string; url: string };
 export function GifPicker({
   onPick,
@@ -15,7 +16,7 @@ export function GifPicker({
     const abort = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
-      fetch(`/api/gifs?q=${encodeURIComponent(query)}`, { signal: abort.signal })
+      fetch(apiUrl(`/api/gifs?q=${encodeURIComponent(query)}`), { signal: abort.signal })
         .then((r) => r.json())
         .then((data) => setGifs(data.gifs || []))
         .catch(() => {})

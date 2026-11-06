@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useStore } from '../store';
+import { ROOM_SERVER_URL } from '../lib/backend';
 export function useWebRTCSync(
   room: string,
   name: string,
@@ -8,19 +9,25 @@ export function useWebRTCSync(
 ) {
   const socket = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(false);
   const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
   const [host, setHost] = useState(false);
   const peers = useRef(new Map<string, RTCPeerConnection>());
   const stream = useRef<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   useEffect(() => {
-    const s = io({ autoConnect: true });
+    const s = io(ROOM_SERVER_URL, { autoConnect: true });
     socket.current = s;
     s.on('connect', () => {
       setConnected(true);
+      setConnectionError(false);
       s.emit('join', { room, name });
     });
     s.on('disconnect', () => setConnected(false));
+    s.on('connect_error', () => {
+      setConnected(false);
+      setConnectionError(true);
+    });
     s.on('share-stop', () => setRemoteStream(null));
     s.on('members', ({ members, host }) => {
       setMembers(members);
@@ -106,5 +113,5 @@ export function useWebRTCSync(
     socket.current?.emit('share-start');
     return stream.current;
   };
-  return { socket, connected, members, host, broadcast, share, remoteStream };
+  return { socket, connected, connectionError, members, host, broadcast, share, remoteStream };
 }

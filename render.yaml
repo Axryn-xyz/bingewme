@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: bingewme
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: FRONTEND_ORIGINS
+        value: https://binge.axryn.xyz
