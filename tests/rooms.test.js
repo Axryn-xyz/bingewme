@@ -2,13 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { io } from 'socket.io-client';
-const event = (s, name) =>
+const event = (s, name, matches = () => true) =>
   new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Timeout: ' + name)), 8000);
-    s.once(name, (data) => {
+    const timer = setTimeout(() => {
+      s.off(name, listener);
+      reject(new Error('Timeout: ' + name));
+    }, 8000);
+    const listener = (data) => {
+      if (!matches(data)) return;
       clearTimeout(timer);
+      s.off(name, listener);
       resolve(data);
-    });
+    };
+    s.on(name, listener);
   });
 test('room chat, playback, host lock, resync and majority vote', async () => {
   const proc = spawn(process.execPath, ['server/index.js'], {
@@ -92,7 +98,7 @@ test('room chat, playback, host lock, resync and majority vote', async () => {
     const ballot = event(guest, 'vote-state');
     host.emit('vote-start');
     assert.equal((await ballot).votes, 1);
-    const majority = event(host, 'vote-state');
+    const majority = event(host, 'vote-state', (state) => state.votes === 2);
     guest.emit('vote-yes');
     assert.equal((await majority).votes, 2);
     const result = event(host, 'vote-result');
