@@ -16,6 +16,24 @@ const io = new Server(http, {
   cors: { origin: frontendOrigins, methods: ['GET', 'POST'] },
 });
 const rooms = new Map();
+const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+const turnUrls = (process.env.TURN_URLS || '')
+  .split(',')
+  .map((url) => url.trim())
+  .filter((url) => /^turns?:/i.test(url));
+if (turnUrls.length && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL)
+  iceServers.push({
+    urls: turnUrls,
+    username: process.env.TURN_USERNAME,
+    credential: process.env.TURN_CREDENTIAL,
+  });
+function stopScreenShare(code, room) {
+  room.sharing = null;
+  room.state = { source: '', title: '', mediaId: '', time: 0, playing: false, rate: 1 };
+  room.updatedAt = Date.now();
+  io.to(code).emit('share-stop');
+  io.to(code).emit('sync', room.state);
+}
 app.use('/api', (req, res, next) => {
   res.vary('Origin');
   if (frontendOrigins.includes(req.headers.origin)) {
@@ -171,7 +189,7 @@ io.on('connection', (s) => {
     s.data.uploadToken = randomUUID();
     s.join(room);
     update();
-    s.emit('session', { uploadToken: s.data.uploadToken });
+    s.emit('session', { uploadToken: s.data.uploadToken, iceServers });
     s.emit('queue-state', r.queue);
     s.emit('settings', { locked: r.locked, vote: r.voteEnabled });
     const current = snapshot();
@@ -272,6 +290,7 @@ io.on('connection', (s) => {
   });
   s.on('sync', (data) => {
     const r = state();
+    if (r?.sharing) return;
     if (!r || !r.members.has(s.id) || (r.locked && r.host !== s.id)) return;
     if (
       !data ||
@@ -372,20 +391,38 @@ io.on('connection', (s) => {
       });
   });
   s.on('signal', (data) => {
-    if (state()?.members.has(data?.to)) io.to(data.to).emit('signal', { ...data, from: s.id });
+    const r = state();
+    if (r?.sharing && r.members.has(data?.to) && (r.sharing === s.id || r.sharing === data.to))
+      io.to(data.to).emit('signal', {
+        description: data.description,
+        candidate: data.candidate,
+        from: s.id,
+      });
   });
   s.on('share-stop', () => {
     const r = state();
     if (r?.sharing === s.id) {
-      r.sharing = null;
-      s.to(room).emit('share-stop');
+      stopScreenShare(room, r);
     }
   });
-  s.on('share-start', () => {
+  s.on('share-start', (_, reply) => {
     const r = state();
-    if (!r || (r.locked && r.host !== s.id)) return;
+    if (!r || (r.locked && r.host !== s.id))
+      return reply?.({ error: 'Only the host can share while controls are locked.' });
+    if (r.sharing && r.sharing !== s.id) s.to(room).emit('share-stop');
     r.sharing = s.id;
+    r.state = {
+      source: '',
+      title: 'Live screen share',
+      mediaId: '',
+      time: 0,
+      playing: true,
+      rate: 1,
+    };
+    r.updatedAt = Date.now();
+    io.to(room).emit('sync', r.state);
     for (const id of r.members.keys()) if (id !== s.id) s.emit('share-request', id);
+    reply?.({ ok: true });
   });
   s.on('disconnect', () => {
     const r = state();
@@ -397,7 +434,7 @@ io.on('connection', (s) => {
       media.removeRoom(room);
     } else {
       if (r.host === s.id) r.host = r.members.keys().next().value;
-      if (r.sharing === s.id) r.sharing = null;
+      if (r.sharing === s.id) stopScreenShare(room, r);
       update();
     }
   });

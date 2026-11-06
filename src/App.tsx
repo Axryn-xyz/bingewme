@@ -169,8 +169,8 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   );
   useEffect(() => () => uploadAbort.current?.abort(), []);
   useEffect(() => {
-    setLocalStream(null);
-  }, [s.source]);
+    if (!sync.connected) setLocalStream(null);
+  }, [sync.connected]);
   function toggle() {
     const player = s.controller?.source === s.source ? s.controller : video.current;
     if (s.needsInteraction) {
@@ -297,8 +297,10 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
         stream.getTracks().forEach((t) => t.stop());
         sync.socket.current?.emit('share-stop');
       };
-    } catch {
-      toast('Screen sharing was cancelled or is unavailable.');
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : 'Screen sharing was cancelled or is unavailable.',
+      );
     }
   }
   async function camera() {
@@ -444,6 +446,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 <MediaEngine
                   ref={video}
                   stream={localStream || sync.remoteStream}
+                  muted={!!localStream}
                   onAction={youtubeAction}
                   onEnded={() => {
                     if (sync.host) next();

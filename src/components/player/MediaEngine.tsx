@@ -7,8 +7,13 @@ import { twitchSource } from '../../lib/twitch';
 import { TwitchPlayer } from './TwitchPlayer';
 export const MediaEngine = forwardRef<
   HTMLVideoElement,
-  { stream: MediaStream | null; onEnded: () => void; onAction: (action: YouTubeAction) => void }
->(({ stream, onEnded, onAction }, ref) => {
+  {
+    stream: MediaStream | null;
+    muted?: boolean;
+    onEnded: () => void;
+    onAction: (action: YouTubeAction) => void;
+  }
+>(({ stream, muted = false, onEnded, onAction }, ref) => {
   const { source, volume, rate, set, controller, queue, mediaId } = useStore();
   const mediaType = queue.find((item) => item.id === mediaId)?.mediaType;
   useEffect(() => {
@@ -43,11 +48,36 @@ export const MediaEngine = forwardRef<
     const v = typeof ref === 'object' ? ref?.current : null;
     if (v) {
       v.volume = volume;
+      v.muted = muted;
       v.playbackRate = rate;
-      if (stream) v.srcObject = stream;
-      else v.srcObject = null;
     }
-  }, [stream, volume, rate, ref, source]);
+  }, [stream, volume, rate, ref, source, muted]);
+  useEffect(() => {
+    const v = typeof ref === 'object' ? ref?.current : null;
+    let cancelled = false;
+    if (v) {
+      if (stream) {
+        v.srcObject = stream;
+        const play = () => {
+          void v
+            .play()
+            .then(() => {
+              if (!cancelled) set({ needsInteraction: false });
+            })
+            .catch(() => {
+              if (!cancelled) set({ needsInteraction: true });
+            });
+        };
+        v.addEventListener('loadedmetadata', play);
+        play();
+        return () => {
+          cancelled = true;
+          v.removeEventListener('loadedmetadata', play);
+          if (v.srcObject === stream) v.srcObject = null;
+        };
+      } else v.srcObject = null;
+    }
+  }, [stream, ref, source, set]);
   if (!source && !stream) return null;
   const youtube = !stream && youtubeId(source);
   if (youtube)
@@ -69,7 +99,10 @@ export const MediaEngine = forwardRef<
     <video
       ref={ref}
       className="video"
-      src={stream ? undefined : source.startsWith('/api/media/') ? apiUrl(source) : source}
+      src={
+        stream ? undefined : source.startsWith('/api/media/') ? apiUrl(source) : source || undefined
+      }
+      muted={muted}
       playsInline
       preload="metadata"
       onTimeUpdate={(e) => set({ time: e.currentTarget.currentTime })}

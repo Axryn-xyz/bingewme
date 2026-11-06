@@ -4,6 +4,7 @@ import { useStore } from '../store';
 import { ROOM_SERVER_URL } from '../lib/backend';
 import { applyPlayback, type PlaybackSnapshot } from '../lib/playback';
 import type { QueueItem } from '../store';
+import { ScreenPeers, type ScreenSignal } from '../lib/screen-peers';
 export function useWebRTCSync(
   room: string,
   name: string,
@@ -21,19 +22,34 @@ export function useWebRTCSync(
   const [roomError, setRoomError] = useState('');
   const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
   const [host, setHost] = useState(false);
-  const peers = useRef(new Map<string, RTCPeerConnection>());
+  const peers = useRef<ScreenPeers | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   useEffect(() => {
     const s = io(ROOM_SERVER_URL, { autoConnect: true });
     socket.current = s;
+    const screenPeers = new ScreenPeers(
+      (to, signal) => s.emit('signal', { to, ...signal }),
+      setRemoteStream,
+      (mediaError) => useStore.getState().set({ mediaError }),
+    );
+    peers.current = screenPeers;
+    const stopShare = () => {
+      screenPeers.setStream(null);
+      setRemoteStream(null);
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+    };
     s.on('connect', () => {
       setConnected(false);
       setConnectionError(false);
       setRoomError('');
       s.emit('join', { room, name: nameRef.current });
     });
-    s.on('disconnect', () => setConnected(false));
+    s.on('disconnect', () => {
+      setConnected(false);
+      stopShare();
+    });
     s.on('connect_error', () => {
       setConnected(false);
       setConnectionError(true);
@@ -43,17 +59,17 @@ export function useWebRTCSync(
       setConnectionError(true);
       setRoomError(message);
     });
-    s.on('session', (data: { uploadToken: string }) => setUploadToken(data.uploadToken));
-    s.on('queue-state', (queue: QueueItem[]) => useStore.getState().set({ queue }));
-    s.on('share-stop', () => {
-      setRemoteStream(null);
-      stream.current?.getTracks().forEach((track) => track.stop());
-      stream.current = null;
+    s.on('session', (data: { uploadToken: string; iceServers?: RTCIceServer[] }) => {
+      setUploadToken(data.uploadToken);
+      if (data.iceServers) screenPeers.configure(data.iceServers);
     });
+    s.on('queue-state', (queue: QueueItem[]) => useStore.getState().set({ queue }));
+    s.on('share-stop', stopShare);
     s.on('members', ({ members, host }) => {
       setConnected(true);
       setMembers(members);
       setHost(host === s.id);
+      screenPeers.retain(members.map((member: { id: string }) => member.id));
     });
     s.on('chat', useStore.getState().addMessage);
     s.on('sync', (data: PlaybackSnapshot) => {
@@ -86,48 +102,15 @@ export function useWebRTCSync(
         rate: data.rate,
       });
     });
-    const peer = (id: string) => {
-      let p = peers.current.get(id);
-      if (!p) {
-        p = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        peers.current.set(id, p);
-        p.onicecandidate = (e) => {
-          if (e.candidate) s.emit('signal', { to: id, candidate: e.candidate });
-        };
-        p.ontrack = (e) => {
-          setRemoteStream(e.streams[0]);
-          e.track.onended = () => setRemoteStream(null);
-        };
-        stream.current?.getTracks().forEach((t) => p!.addTrack(t, stream.current!));
-      }
-      return p;
-    };
-    s.on('signal', async ({ from, description, candidate }) => {
-      try {
-        const p = peer(from);
-        if (description) {
-          await p.setRemoteDescription(description);
-          if (description.type === 'offer') {
-            await p.setLocalDescription(await p.createAnswer());
-            s.emit('signal', { to: from, description: p.localDescription });
-          }
-        }
-        if (candidate) await p.addIceCandidate(candidate);
-      } catch (e) {
-        console.error('Connection failed', e);
-      }
+    s.on('signal', ({ from, ...signal }: ScreenSignal & { from: string }) => {
+      void screenPeers.signal(from, signal);
     });
-    s.on('share-request', async (id: string) => {
-      if (!stream.current) return;
-      const p = peer(id);
-      await p.setLocalDescription(await p.createOffer());
-      s.emit('signal', { to: id, description: p.localDescription });
+    s.on('share-request', (id: string) => {
+      void screenPeers.offer(id);
     });
     return () => {
       s.disconnect();
-      peers.current.forEach((p) => p.close());
-      peers.current.clear();
-      stream.current?.getTracks().forEach((t) => t.stop());
+      stopShare();
     };
   }, [room, video]);
   useEffect(() => {
@@ -181,12 +164,25 @@ export function useWebRTCSync(
     return () => clearInterval(t);
   }, [host]);
   const share = async () => {
-    stream.current = await navigator.mediaDevices.getDisplayMedia({
+    if (!connected || !socket.current?.connected)
+      throw new Error('Join the room before sharing your screen.');
+    const captured = await navigator.mediaDevices.getDisplayMedia({
       video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
       audio: true,
     });
-    socket.current?.emit('share-start');
-    return stream.current;
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = captured;
+    setRemoteStream(null);
+    peers.current?.setStream(captured);
+    try {
+      await request<{ ok: boolean }>('share-start', {});
+      return captured;
+    } catch (error) {
+      captured.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      peers.current?.setStream(null);
+      throw error;
+    }
   };
   return {
     socket,
