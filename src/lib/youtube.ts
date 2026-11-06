@@ -189,8 +189,8 @@ export class YouTubeController implements PlaybackTarget {
     this.expectedRate = null;
     this.callbacks.action({ rate, time: this.currentTime });
   }
-  onAutoplayBlocked() {
-    if (!this.fallbackUsed && !this.player.isMuted()) {
+  onAutoplayBlocked(allowMutedFallback = true) {
+    if (allowMutedFallback && !this.fallbackUsed && !this.player.isMuted()) {
       this.fallbackUsed = true;
       this.player.mute();
       this.callbacks.state({ needsUnmute: this.volume > 0 });
@@ -200,7 +200,7 @@ export class YouTubeController implements PlaybackTarget {
     this.expectedState = null;
     this.locallyBlocked = true;
     this.callbacks.state({ needsInteraction: true });
-    this.finish(new Error('Tap to allow YouTube playback.'));
+    this.finish(new Error('Tap to allow playback on this device.'));
   }
   tick(now = performance.now()) {
     if (this.disposed) return;

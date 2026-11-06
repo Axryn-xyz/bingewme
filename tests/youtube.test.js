@@ -157,6 +157,29 @@ test('blocked audible autoplay retries muted and exposes an explicit sound actio
   }
 });
 
+test('audio-first playback asks for interaction without silently muting or pausing the room', async () => {
+  const f = fixture();
+  try {
+    const pending = f.controller.play();
+    const rejected = assert.rejects(pending, /Tap to allow/);
+    f.controller.onAutoplayBlocked(false);
+    await rejected;
+    f.controller.onState(2);
+    assert.equal(f.player.muted, false);
+    assert.equal(f.calls.filter(([method]) => method === 'play').length, 1);
+    assert.equal(f.status.needsInteraction, true);
+    assert.equal(f.actions.length, 0);
+    const retry = f.controller.enableAudio();
+    f.player.state = 1;
+    f.controller.onState(1);
+    await retry;
+    assert.equal(f.status.needsInteraction, false);
+    assert.equal(f.player.muted, false);
+  } finally {
+    f.controller.destroy();
+  }
+});
+
 test('even-muted autoplay blocks report a local interaction requirement without pausing the room', async () => {
   const f = fixture();
   try {

@@ -36,7 +36,7 @@ export function TwitchPlayer({
           height: '100%',
           parent: [location.hostname],
           autoplay: false,
-          muted: true,
+          muted: false,
           ...{ [spec.kind === 'video' ? 'video' : 'channel']: spec.value },
         });
         const listeners: [string, () => void][] = [];
@@ -88,9 +88,6 @@ export function TwitchPlayer({
           );
           controller.isLive = spec.kind === 'channel';
           controller.supportsPlaybackRate = false;
-          // Cross-origin playback with sound can be blocked even after a click in our toolbar.
-          // Keep the initial play muted; our Enable sound action supplies the local gesture.
-          useStore.getState().set({ needsUnmute: useStore.getState().volume > 0 });
           controller.setVolume(useStore.getState().volume);
           useStore.getState().set({ controller, rate: 1, duration: controller.duration });
           interval = setInterval(() => controller?.tick(), 250);
@@ -105,7 +102,7 @@ export function TwitchPlayer({
         on(api.Player.ENDED, () => {
           if (spec.kind === 'video') controller?.onState(0);
         });
-        on(api.Player.PLAYBACK_BLOCKED, () => controller?.onAutoplayBlocked());
+        on(api.Player.PLAYBACK_BLOCKED, () => controller?.onAutoplayBlocked(false));
         on(api.Player.SEEK, () => controller?.onSeek());
         on(api.Player.OFFLINE, () =>
           useStore.getState().set({ mediaError: 'This Twitch channel is offline.' }),
