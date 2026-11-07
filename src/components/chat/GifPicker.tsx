@@ -5,9 +5,11 @@ type Gif = { id: string; title: string; url: string };
 export function GifPicker({
   onPick,
   onClose,
+  onOverlay,
 }: {
   onPick: (url: string) => void;
   onClose: () => void;
+  onOverlay?: (url: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [gifs, setGifs] = useState<Gif[]>([]);
@@ -43,9 +45,16 @@ export function GifPicker({
       </div>
       <div className="gif-grid">
         {gifs.map((g) => (
-          <button key={g.id} title={g.title} onClick={() => onPick(g.url)}>
-            <img src={g.url} alt={g.title} loading="lazy" />
-          </button>
+          <div className="gif-choice" key={g.id}>
+            <button title={g.title} onClick={() => onPick(g.url)}>
+              <img src={g.url} alt={g.title} loading="lazy" />
+            </button>
+            {onOverlay && (
+              <button className="gif-project" onClick={() => onOverlay(g.url)}>
+                ON SCREEN ↗
+              </button>
+            )}
+          </div>
         ))}
       </div>
       <small>

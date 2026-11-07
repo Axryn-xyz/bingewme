@@ -8,6 +8,7 @@ import { UploadProgress } from './components/player/UploadProgress';
 import { uploadFile, formatBytes, type UploadProgress as UploadStatus } from './lib/upload';
 import { youtubeId, type YouTubeAction } from './lib/youtube';
 import { twitchSource } from './lib/twitch';
+import { vimeoSource } from './lib/vimeo';
 import { parseRoomCode } from './lib/rooms';
 import { applyTheme, readAccent } from './lib/theme';
 import {
@@ -40,12 +41,15 @@ import {
   ArrowRight,
   Play,
   Film,
-  Volume2,
 } from 'lucide-react';
 import { useStore, type QueueItem } from './store';
 import { GifPicker } from './components/chat/GifPicker';
 import { stageFile } from './lib/staging';
 import { useWebRTCSync } from './hooks/useWebRTCSync';
+import { useSofaMedia } from './hooks/useSofaMedia';
+import { SofaRoom } from './components/chat/SofaRoom';
+import { RoomDashboard, ModerationDashboard } from './components/RoomDashboard';
+import { GifOverlay } from './components/chat/GifOverlay';
 import { MediaEngine } from './components/player/MediaEngine';
 import { Controls } from './components/player/Controls';
 import { Telestrator } from './components/canvas/Telestrator';
@@ -76,6 +80,11 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const [uploadName, setUploadName] = useState('');
   const uploadAbort = useRef<AbortController | null>(null);
   const sync = useWebRTCSync(room, name, video);
+  const sofa = useSofaMedia(sync.socket);
+  const cameraOn =
+    sofa.participants.find((person) => person.id === sync.socket.current?.id)?.video || false;
+  const mic =
+    sofa.participants.find((person) => person.id === sync.socket.current?.id)?.audio || false;
   const [tab, setTab] = useState('chat');
   const [modal, setModal] = useState<'media' | 'invite' | null>(null);
   const [mode, setMode] = useState('link');
@@ -86,9 +95,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const [clearKey, setClearKey] = useState(0);
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState('');
-  const [mic, setMic] = useState(false);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [cam, setCam] = useState<MediaStream | null>(null);
   const [picker, setPicker] = useState<'reaction' | 'chat' | null>(null);
   const [favoriteEmojis, setFavoriteEmojis] = useState(readFavoriteEmojis);
   useEffect(() => saveFavoriteEmojis(favoriteEmojis), [favoriteEmojis]);
@@ -97,12 +104,12 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
   const [votes, setVotes] = useState(0);
   const file = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
-  const disabled = s.locked && !sync.host;
+  const disabled = s.locked && !sync.moderator;
   const twitch = twitchSource(s.source);
   const isEmbedded =
     !localStream &&
     !sync.remoteStream &&
-    (!!youtubeId(s.source) || !!twitch || /vimeo\.com\//.test(s.source));
+    (!!youtubeId(s.source) || !!twitch || !!vimeoSource(s.source));
   function toast(message: string) {
     setNotice(message);
     setTimeout(() => setNotice(''), 4000);
@@ -165,12 +172,6 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [s.playing, s.volume, disabled]);
-  useEffect(
-    () => () => {
-      cam?.getTracks().forEach((t) => t.stop());
-    },
-    [cam],
-  );
   useEffect(() => () => uploadAbort.current?.abort(), []);
   useEffect(() => {
     if (!sync.connected) setLocalStream(null);
@@ -308,20 +309,10 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
     }
   }
   async function camera() {
-    if (cam) {
-      cam.getTracks().forEach((t) => t.stop());
-      setCam(null);
-      return;
-    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: { noiseSuppression: true, echoCancellation: true },
-      });
-      stream.getAudioTracks().forEach((t) => (t.enabled = false));
-      setCam(stream);
-    } catch {
-      toast('Camera access is unavailable.');
+      await sofa.setDevices(!cameraOn, mic);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Camera access is unavailable.');
     }
   }
   function send() {
@@ -350,7 +341,18 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
     />
   );
   return (
-    <div className="app">
+    <div
+      className="app"
+      style={
+        sync.options.branding.background
+          ? {
+              backgroundImage: `linear-gradient(rgb(0 0 0 / 72%), rgb(0 0 0 / 72%)), url("${apiUrl(sync.options.branding.background)}")`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }
+          : undefined
+      }
+    >
       <header className="header">
         <a className="brand" href="/">
           <span className="brand-mark">
@@ -421,6 +423,30 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
             {sync.roomError ||
               'The room connection is unavailable. Chat and playback sync will reconnect automatically when the service is back online.'}
           </div>
+        )}
+        {/passcode/i.test(sync.roomError) && (
+          <form
+            className="passcode-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              sync.joinPasscode(String(data.get('passcode') || ''));
+            }}
+          >
+            <input
+              name="passcode"
+              type="password"
+              className="url-input"
+              aria-label="Room passcode"
+              placeholder="Room passcode"
+              autoComplete="current-password"
+              required
+              maxLength={128}
+            />
+            <button className="yellow-btn" type="submit">
+              Unlock room
+            </button>
+          </form>
         )}
         {uploadStatus && !(modal === 'media' && mode === 'local') && uploadPanel}
         <div className="workspace">
@@ -502,17 +528,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 )}
                 <Telestrator socket={sync.socket.current} clearKey={clearKey} />
                 <ReactionOverlay reactions={reactions} />
-                {cam && (
-                  <video
-                    className="camera-preview"
-                    muted
-                    autoPlay
-                    playsInline
-                    ref={(el) => {
-                      if (el) el.srcObject = cam;
-                    }}
-                  />
-                )}
+                <GifOverlay socket={sync.socket.current} />
                 {vote && (
                   <div className="vote-card">
                     Pause for a moment?{' '}
@@ -592,15 +608,30 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 <div>
                   <strong>{s.title || 'Nothing playing yet'}</strong>
                   <small>
-                    {s.source
-                      ? 'Everyone is watching the same moment.'
-                      : 'Add something to start the night.'}
+                    {localStream || sync.remoteStream
+                      ? 'Live screen share with your room.'
+                      : s.source
+                        ? 'Everyone is watching the same moment.'
+                        : 'Add something to start the night.'}
                   </small>
                 </div>
-                <span className="source-badge">{s.source ? 'IN SYNC' : 'EMPTY ROOM'}</span>
+                <span className="source-badge">
+                  {localStream || sync.remoteStream ? 'LIVE' : s.source ? 'IN SYNC' : 'EMPTY ROOM'}
+                </span>
               </div>
               <button className="outline-btn" onClick={() => setModal('media')} disabled={disabled}>
                 <Plus size={15} /> Add media
+              </button>
+              <button
+                className="outline-btn"
+                disabled={
+                  !sync.connected || s.queue.length < 2 || !!localStream || !!sync.remoteStream
+                }
+                onClick={() => void sync.voteSkip().catch((error: Error) => toast(error.message))}
+              >
+                {sync.skipVote
+                  ? `Skip vote ${sync.skipVote.votes}/${sync.skipVote.needed}`
+                  : 'Vote to skip'}
               </button>
             </div>
             <div className="interaction-bar">
@@ -645,12 +676,15 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 <span className="tool-divider" />
                 <button
                   onClick={async () => {
-                    if (!cam) {
-                      toast('Turn on your camera to enable its microphone.');
-                      return;
+                    try {
+                      await sofa.setDevices(cameraOn, !mic);
+                    } catch (error) {
+                      toast(
+                        error instanceof Error
+                          ? error.message
+                          : 'Microphone access is unavailable.',
+                      );
                     }
-                    setMic(!mic);
-                    cam.getAudioTracks().forEach((t) => (t.enabled = !mic));
                   }}
                   title="Toggle microphone"
                 >
@@ -704,8 +738,24 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 </button>
               ))}
             </div>
+            <SofaRoom {...sofa} self={sync.socket.current?.id} members={sync.members} />
             {tab === 'chat' ? (
               <>
+                {!!sync.options.branding.emotes?.length && (
+                  <div className="chat-emote-pack">
+                    {sync.options.branding.emotes.map((emote) => (
+                      <button
+                        key={emote.id}
+                        title={`Show ${emote.name} on screen`}
+                        onClick={() =>
+                          void sync.overlay(emote.url).catch((error: Error) => toast(error.message))
+                        }
+                      >
+                        <img src={apiUrl(emote.url)} alt={emote.name} />
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="panel-title">
                   <h3>
                     The group chat <span>{participants.length}</span>
@@ -753,6 +803,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                       <div>
                         <div className="message-author">
                           {m.name}
+                          {m.badge && <span className="custom-badge">{m.badge}</span>}
                           <time>{m.time}</time>
                         </div>
                         <p>
@@ -774,6 +825,12 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 </div>
                 {gifPicker && (
                   <GifPicker
+                    onOverlay={(url) => {
+                      void sync
+                        .overlay(url)
+                        .then(() => setGifPicker(false))
+                        .catch((error: Error) => toast(error.message));
+                    }}
                     onClose={() => setGifPicker(false)}
                     onPick={(url) => {
                       const m = {
@@ -839,6 +896,29 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 </p>
                 {s.queue.map((item, i) => (
                   <div className="queue-row" key={item.id}>
+                    <div className="queue-move">
+                      {[-1, 1].map((direction) => (
+                        <button
+                          key={direction}
+                          aria-label={`Move ${item.title} ${direction < 0 ? 'up' : 'down'}`}
+                          disabled={
+                            disabled ||
+                            !sync.connected ||
+                            i + direction < 0 ||
+                            i + direction >= s.queue.length
+                          }
+                          onClick={() => {
+                            const ids = s.queue.map((item) => item.id);
+                            [ids[i], ids[i + direction]] = [ids[i + direction], ids[i]];
+                            void sync
+                              .reorderQueue(ids)
+                              .catch((error: Error) => toast(error.message));
+                          }}
+                        >
+                          {direction < 0 ? '↑' : '↓'}
+                        </button>
+                      ))}
+                    </div>
                     <button
                       className={`queue-item ${s.mediaId === item.id ? 'current' : ''}`}
                       onClick={() => !disabled && load(item)}
@@ -881,31 +961,7 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                   <h3>Your people</h3>
                   <span className="room-tag">{participants.length} / 100</span>
                 </div>
-                <p className="panel-description">Different places. Same wavelength.</p>
-                {participants.map((p, i) => (
-                  <div className="person" key={p.id}>
-                    <span className="chat-avatar" style={{ background: 'var(--accent-soft)' }}>
-                      {p.name[0]}
-                    </span>
-                    <div>
-                      <strong>
-                        {p.name} {i === 0 && <small>HOST</small>}
-                      </strong>
-                      <p>Connected to the room</p>
-                      <input
-                        aria-label={`${p.name} volume`}
-                        type="range"
-                        min="0"
-                        max="100"
-                        defaultValue="100"
-                      />
-                    </div>
-                    <Volume2 size={16} />
-                  </div>
-                ))}
-                <button className="queue-add" onClick={() => setModal('invite')}>
-                  <Plus size={17} /> There's room for your friends
-                </button>
+                <ModerationDashboard sync={sync} notify={toast} />
               </div>
             ) : (
               <div className="panel-content">
@@ -996,8 +1052,13 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                 </div>
                 <div className="settings-note">
                   <Shield size={20} />
-                  <p>Your room is temporary. Chat history disappears when everyone leaves.</p>
+                  <p>
+                    {sync.options.persistent
+                      ? 'Room settings and link queues are saved. Chat remains ephemeral.'
+                      : 'Temporary rooms close when everyone leaves. Enable persistence below to keep this room.'}
+                  </p>
                 </div>
+                <RoomDashboard room={room} sync={sync} notify={toast} />
               </div>
             )}
             <div className="sidebar-status">

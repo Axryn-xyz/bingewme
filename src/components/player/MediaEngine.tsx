@@ -5,6 +5,8 @@ import { YouTubePlayer } from './YouTubePlayer';
 import { youtubeId, type YouTubeAction } from '../../lib/youtube';
 import { twitchSource } from '../../lib/twitch';
 import { TwitchPlayer } from './TwitchPlayer';
+import { VimeoPlayer } from './VimeoPlayer';
+import { vimeoSource } from '../../lib/vimeo';
 export const MediaEngine = forwardRef<
   HTMLVideoElement,
   {
@@ -84,25 +86,19 @@ export const MediaEngine = forwardRef<
     return <YouTubePlayer source={source} id={youtube} onEnded={onEnded} onAction={onAction} />;
   if (!stream && twitchSource(source))
     return <TwitchPlayer source={source} onAction={onAction} onEnded={onEnded} />;
-  const vimeo = source.match(/vimeo.com\/(\d+)/);
+  const vimeo = vimeoSource(source);
   if (!stream && vimeo)
-    return (
-      <iframe
-        className="video"
-        title="Embedded video"
-        src={`https://player.vimeo.com/video/${vimeo[1]}`}
-        allow="autoplay; fullscreen; picture-in-picture"
-        allowFullScreen
-      />
-    );
+    return <VimeoPlayer source={source} onAction={onAction} onEnded={onEnded} />;
   return (
     <video
+      key={stream ? 'screen-share' : source}
       ref={ref}
       className="video"
       src={
         stream ? undefined : source.startsWith('/api/media/') ? apiUrl(source) : source || undefined
       }
       muted={muted}
+      crossOrigin={source.startsWith('/api/media/') ? 'anonymous' : undefined}
       playsInline
       preload="metadata"
       onTimeUpdate={(e) => set({ time: e.currentTarget.currentTime })}

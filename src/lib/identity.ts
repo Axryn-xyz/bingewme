@@ -37,3 +37,23 @@ export function clearEntry(): void {
     /* Optional storage. */
   }
 }
+let memoryIdentity = '';
+export function browserIdentity(): string {
+  if (memoryIdentity) return memoryIdentity;
+  try {
+    memoryIdentity = localStorage.getItem('bingewme:identity') || '';
+  } catch {
+    /* Use this session's identity. */
+  }
+  if (!/^[a-f0-9-]{32,128}$/i.test(memoryIdentity)) memoryIdentity = crypto.randomUUID();
+  rememberIdentity(memoryIdentity);
+  return memoryIdentity;
+}
+export function rememberIdentity(token: string) {
+  memoryIdentity = token;
+  try {
+    localStorage.setItem('bingewme:identity', token);
+  } catch {
+    /* Memory is sufficient for this visit. */
+  }
+}

@@ -1,0 +1,101 @@
+.sofa-room {
+  padding: 14px;
+  border-bottom: 2px solid var(--border);
+  background: var(--surface-raised);
+}
+.sofa-room > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sofa-room header > span {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--accent-text);
+  font: 11px monospace;
+}
+.sofa-room header small {
+  color: var(--text-muted);
+  font: 9px monospace;
+}
+.sofa-room > p {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.sofa-seats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.sofa-seat {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  border: 2px solid var(--border);
+  background: var(--surface-base);
+  overflow: hidden;
+}
+.sofa-seat video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sofa-seat .sofa-audio-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.sofa-avatar {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 30px;
+  color: var(--accent-text);
+}
+.sofa-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  padding: 4px 5px;
+  background: rgb(0 0 0 / 75%);
+  color: #fff;
+  font-size: 10px;
+}
+.sofa-volume {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 3px 6px;
+  color: var(--text-primary);
+  background: var(--surface-panel);
+}
+.sofa-volume input {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--accent);
+}
+.sofa-enable {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  right: 5px;
+  padding: 5px;
+  color: var(--on-accent);
+  background: var(--accent);
+  font-size: 10px;
+}

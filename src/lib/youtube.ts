@@ -100,7 +100,7 @@ export class YouTubeController implements PlaybackTarget {
     }
   }
   play(): Promise<void> {
-    if (this.disposed) return Promise.reject(new Error('The YouTube player was closed.'));
+    if (this.disposed) return Promise.reject(new Error('The video player was closed.'));
     if (this.player.getPlayerState() === 1) return Promise.resolve();
     if (this.pending)
       return new Promise((resolve, reject) => {
@@ -122,7 +122,7 @@ export class YouTubeController implements PlaybackTarget {
     this.locallyBlocked = false;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
-        () => this.finish(new Error('YouTube playback did not start.')),
+        () => this.finish(new Error('Video playback did not start.')),
         12000,
       );
       this.pending = { resolve, reject, timer };

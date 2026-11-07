@@ -5,6 +5,8 @@ import { ROOM_SERVER_URL } from '../lib/backend';
 import { applyPlayback, type PlaybackSnapshot } from '../lib/playback';
 import type { QueueItem } from '../store';
 import { ScreenPeers, type ScreenSignal } from '../lib/screen-peers';
+import { browserIdentity, rememberIdentity } from '../lib/identity';
+import type { RoomMember, RoomOptions, RoomBan, RoomCommand } from '../lib/room-types';
 export function useWebRTCSync(
   room: string,
   name: string,
@@ -20,7 +22,17 @@ export function useWebRTCSync(
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [roomError, setRoomError] = useState('');
-  const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
+  const [members, setMembers] = useState<RoomMember[]>([]);
+  const [options, setOptions] = useState<RoomOptions>({
+    persistent: false,
+    hasPasscode: false,
+    branding: {},
+  });
+  const [bans, setBans] = useState<RoomBan[]>([]);
+  const [skipVote, setSkipVote] = useState<{ votes: number; needed: number; ends: number } | null>(
+    null,
+  );
+  const passcode = useRef('');
   const [host, setHost] = useState(false);
   const peers = useRef<ScreenPeers | null>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -44,7 +56,12 @@ export function useWebRTCSync(
       setConnected(false);
       setConnectionError(false);
       setRoomError('');
-      s.emit('join', { room, name: nameRef.current });
+      s.emit('join', {
+        room,
+        name: nameRef.current,
+        identityToken: browserIdentity(),
+        passcode: passcode.current,
+      });
     });
     s.on('disconnect', () => {
       setConnected(false);
@@ -59,10 +76,17 @@ export function useWebRTCSync(
       setConnectionError(true);
       setRoomError(message);
     });
-    s.on('session', (data: { uploadToken: string; iceServers?: RTCIceServer[] }) => {
-      setUploadToken(data.uploadToken);
-      if (data.iceServers) screenPeers.configure(data.iceServers);
-    });
+    s.on(
+      'session',
+      (data: { uploadToken: string; iceServers?: RTCIceServer[]; identityToken?: string }) => {
+        setUploadToken(data.uploadToken);
+        if (data.iceServers) screenPeers.configure(data.iceServers);
+        if (data.identityToken) rememberIdentity(data.identityToken);
+      },
+    );
+    s.on('room-options', setOptions);
+    s.on('moderation-state', (data: { bans: RoomBan[] }) => setBans(data.bans));
+    s.on('skip-state', setSkipVote);
     s.on('queue-state', (queue: QueueItem[]) => useStore.getState().set({ queue }));
     s.on('share-stop', stopShare);
     s.on('members', ({ members, host }) => {
@@ -193,6 +217,10 @@ export function useWebRTCSync(
     connectionError,
     roomError,
     members,
+    options,
+    bans,
+    skipVote,
+    moderator: members.find((member) => member.id === socket.current?.id)?.moderator || host,
     host,
     broadcast,
     share,
@@ -204,5 +232,20 @@ export function useWebRTCSync(
     selectMedia: (id: string) => request<{ ok: boolean }>('queue-select', id),
     removeMedia: (id: string) => request<{ ok: boolean }>('queue-remove', id),
     rename: (name: string) => request<{ name: string }>('rename', name),
+    manageRoom: (command: RoomCommand) => request<{ ok: boolean }>('room-manage', command),
+    reorderQueue: (ids: string[]) => request<{ ok: boolean }>('queue-reorder', ids),
+    voteSkip: () => request<{ ok: boolean }>('skip-vote', {}),
+    selectBadge: (badge: string) => request<{ ok: boolean }>('badge-select', badge),
+    overlay: (url: string) => request<{ ok: boolean }>('gif-overlay', url),
+    joinPasscode: (value: string) => {
+      passcode.current = value;
+      setRoomError('');
+      socket.current?.emit('join', {
+        room,
+        name: nameRef.current,
+        identityToken: browserIdentity(),
+        passcode: value,
+      });
+    },
   };
 }

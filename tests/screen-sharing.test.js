@@ -83,6 +83,23 @@ test(
       const lateState = event(late.socket, 'sync');
       late.socket.emit('request-sync');
       assert.equal((await lateState).playing, true);
+      const cameraState = event(guest.socket, 'camera-state'),
+        cameraRequest = event(host.socket, 'camera-request');
+      assert.deepEqual(await request(host.socket, 'camera-start', { video: true, audio: true }), {
+        ok: true,
+      });
+      assert.equal((await cameraState)[0].id, host.socket.id);
+      assert.ok([guest.socket.id, late.socket.id].includes(await cameraRequest));
+      const cameraSignal = event(guest.socket, 'camera-signal');
+      host.socket.emit('camera-signal', {
+        to: guest.socket.id,
+        publisher: host.socket.id,
+        description: { type: 'offer', sdp: 'camera-sdp' },
+      });
+      assert.equal((await cameraSignal).publisher, host.socket.id);
+      const cameraStopped = event(guest.socket, 'camera-stop');
+      host.socket.emit('camera-stop');
+      assert.equal(await cameraStopped, host.socket.id);
       const stopped = event(guest.socket, 'share-stop'),
         cleared = event(guest.socket, 'sync');
       host.socket.disconnect();
@@ -144,7 +161,9 @@ test(
               video.muted = true;
               void video.play();
             },
-            (error) => window.errors.push(error),
+            (error) => {
+              if (error) window.errors.push(error);
+            },
           );
           window.peer.configure([]);
         });

@@ -5,6 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { allocateRoomCode, createRoomState } from './room-codes.js';
 import { createRoomMedia } from './room-media.js';
 import { resolveMedia } from './media-resolver.js';
+import { registerSofa, sofaSnapshot } from './sofa.js';
+import { createRoomStore, canModerate, checkPasscode, identityHash } from './room-store.js';
+import { registerManagement, roomOptions } from './room-management.js';
+import { registerRoomAssets } from './room-assets.js';
 const app = express();
 const http = createServer(app);
 const frontendOrigins = (process.env.FRONTEND_ORIGINS || '')
@@ -15,7 +19,8 @@ const io = new Server(http, {
   maxHttpBufferSize: 100000,
   cors: { origin: frontendOrigins, methods: ['GET', 'POST'] },
 });
-const rooms = new Map();
+const roomStore = createRoomStore();
+const rooms = roomStore.load();
 const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
 const turnUrls = (process.env.TURN_URLS || '')
   .split(',')
@@ -45,7 +50,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
-function publishMedia(code, room, item) {
+function publishMedia(code, room, item, playing = false) {
   if (room.sharing) {
     room.sharing = null;
     io.to(code).emit('share-stop');
@@ -55,14 +60,19 @@ function publishMedia(code, room, item) {
     title: item.title,
     mediaId: item.id,
     time: 0,
-    playing: false,
+    playing,
     rate: 1,
   };
   room.updatedAt = Date.now();
   io.to(code).emit('queue-state', room.queue);
   io.to(code).emit('sync', room.state);
+  clearTimeout(room.skipTimer);
+  room.skipBallot = null;
+  io.to(code).emit('skip-state', null);
+  roomStore.save(code, room);
 }
 const media = createRoomMedia({ app, io, rooms, publishMedia });
+registerRoomAssets({ app, io, rooms, store: roomStore });
 app.post('/api/rooms', (_, res) => {
   try {
     const code = allocateRoomCode(rooms);
@@ -140,11 +150,23 @@ io.on('connection', (s) => {
   let room;
   let lastChat = 0;
   const state = () => rooms.get(room);
+  registerSofa(s, { io, state, roomCode: () => room });
   const update = () => {
     const r = state();
     if (r)
       io.to(room).emit('members', {
-        members: [...r.members].map(([id, name]) => ({ id, name })),
+        members: [...r.members].map(([id, name]) => {
+          const member = io.sockets.sockets.get(id);
+          const hash = member?.data.identityHash;
+          return {
+            id,
+            name,
+            moderator: canModerate(r, member || { id, data: {} }),
+            chatMuted: !!r.chatMutes?.has(hash),
+            micMuted: !!r.micMutes?.has(hash),
+            badge: r.badgesByIdentity?.get(hash) || '',
+          };
+        }),
         host: r.host,
       });
   };
@@ -157,7 +179,16 @@ io.on('connection', (s) => {
         r.state.time + (r.state.playing ? ((Date.now() - r.updatedAt) / 1000) * r.state.rate : 0),
     };
   };
-  s.on('join', (data) => {
+  registerManagement(s, {
+    io,
+    state,
+    roomCode: () => room,
+    store: roomStore,
+    update,
+    publishMedia,
+    stopScreenShare,
+  });
+  s.on('join', async (data) => {
     if (typeof data?.room !== 'string' || typeof data?.name !== 'string') return;
     if (room) return;
     const code = data.room.trim().toLowerCase();
@@ -176,9 +207,29 @@ io.on('connection', (s) => {
     if (r.members.size >= 100) {
       return s.emit('room-error', 'Room is full');
     }
+    const token =
+      typeof data.identityToken === 'string' && /^[a-f0-9-]{32,128}$/i.test(data.identityToken)
+        ? data.identityToken
+        : randomUUID();
+    const hash = identityHash(token);
+    if (r.bans?.has(hash)) return s.emit('room-error', 'You are banned from this room.');
+    s.data.joinAttempts = (s.data.joinAttempts || 0) + 1;
+    if (s.data.joinAttempts > 10)
+      return s.emit('room-error', 'Too many passcode attempts. Reconnect before trying again.');
+    if (!(await checkPasscode(data.passcode, r.passcodeHash)))
+      return s.emit('room-error', 'This room requires a valid passcode.');
+    if (room || !s.connected) return;
+    if (rooms.get(code) !== r)
+      return s.emit('room-error', 'That room closed while joining. Create a new room.');
+    if (r.members.size >= 100) return s.emit('room-error', 'Room is full');
+    if (r.bans?.has(hash)) return s.emit('room-error', 'You are banned from this room.');
+    s.data.identityHash = hash;
+    s.data.chatMuted = !!r.chatMutes?.has(hash);
+    s.data.micMuted = !!r.micMutes?.has(hash);
+    r.ownerHash ||= hash;
     room = code;
     clearTimeout(r.reservationTimer);
-    if (!r.host) r.host = s.id;
+    if (r.ownerHash === hash || (!r.persistent && !r.host)) r.host = s.id;
     r.members.set(
       s.id,
       data.name
@@ -189,12 +240,20 @@ io.on('connection', (s) => {
     s.data.uploadToken = randomUUID();
     s.join(room);
     update();
-    s.emit('session', { uploadToken: s.data.uploadToken, iceServers });
+    s.emit('session', { uploadToken: s.data.uploadToken, identityToken: token, iceServers });
+    s.emit('room-options', roomOptions(r));
+    if (canModerate(r, s))
+      s.emit('moderation-state', {
+        bans: [...(r.bans || new Map())].map(([id, value]) => ({ id, ...value })),
+      });
     s.emit('queue-state', r.queue);
     s.emit('settings', { locked: r.locked, vote: r.voteEnabled });
     const current = snapshot();
     if (current) s.emit('sync', current);
     if (r.sharing) io.to(r.sharing).emit('share-request', s.id);
+    s.emit('camera-state', sofaSnapshot(r));
+    for (const id of r.cameras?.keys() || []) io.to(id).emit('camera-request', s.id);
+    roomStore.save(room, r);
   });
   s.on('rename', (name, reply) => {
     const r = state();
@@ -212,7 +271,7 @@ io.on('connection', (s) => {
   });
   s.on('queue-add', async (data, reply) => {
     const r = state();
-    if (!r || (r.locked && r.host !== s.id))
+    if (!r || (r.locked && !canModerate(r, s)))
       return reply?.({ error: 'Only the host can add media while controls are locked.' });
     if (r.queue.length >= 100) return reply?.({ error: 'The room queue is full.' });
     if (s.data.resolving) return reply?.({ error: 'Your previous link is still being checked.' });
@@ -223,7 +282,7 @@ io.on('connection', (s) => {
       const resolved = await resolveMedia(url.href);
       if (state() !== r || !r.members.has(s.id))
         return reply?.({ error: 'You are no longer in this room.' });
-      if (r.locked && r.host !== s.id)
+      if (r.locked && !canModerate(r, s))
         return reply?.({ error: 'Playback controls were locked while checking this link.' });
       if (r.queue.length >= 100) return reply?.({ error: 'The room queue is full.' });
       const item = {
@@ -249,7 +308,7 @@ io.on('connection', (s) => {
   });
   s.on('queue-select', (id, reply) => {
     const r = state();
-    if (!r || (r.locked && r.host !== s.id))
+    if (!r || (r.locked && !canModerate(r, s)))
       return reply?.({ error: 'Playback controls are locked by the host.' });
     const item = r.queue.find((item) => item.id === id);
     if (!item) return reply?.({ error: 'That video is no longer in this room.' });
@@ -260,7 +319,7 @@ io.on('connection', (s) => {
     const r = state();
     if (!r || !r.members.has(s.id))
       return reply?.({ error: 'Join this room before changing its queue.' });
-    if (r.locked && r.host !== s.id)
+    if (r.locked && !canModerate(r, s))
       return reply?.({ error: 'Only the host can remove media while controls are locked.' });
     const index = r.queue.findIndex((item) => item.id === id);
     if (index < 0) return reply?.({ error: 'That item is no longer in this room.' });
@@ -286,12 +345,13 @@ io.on('connection', (s) => {
         io.to(room).emit('sync', r.state);
       }
     } else io.to(room).emit('queue-state', r.queue);
+    roomStore.save(room, r);
     reply?.({ ok: true });
   });
   s.on('sync', (data) => {
     const r = state();
     if (r?.sharing) return;
-    if (!r || !r.members.has(s.id) || (r.locked && r.host !== s.id)) return;
+    if (!r || !r.members.has(s.id) || (r.locked && !canModerate(r, s))) return;
     if (
       !data ||
       !Number.isFinite(data.time) ||
@@ -328,6 +388,7 @@ io.on('connection', (s) => {
       if (typeof data.locked === 'boolean') r.locked = data.locked;
       if (typeof data.vote === 'boolean') r.voteEnabled = data.vote;
       io.to(room).emit('settings', { locked: r.locked, vote: r.voteEnabled });
+      roomStore.save(room, r);
     }
   });
   s.on('vote-start', () => {
@@ -356,7 +417,13 @@ io.on('connection', (s) => {
     }
   });
   s.on('chat', (m) => {
-    if (!room || typeof m?.text !== 'string' || !m.text.trim() || Date.now() - lastChat < 300)
+    if (
+      !room ||
+      s.data.chatMuted ||
+      typeof m?.text !== 'string' ||
+      !m.text.trim() ||
+      Date.now() - lastChat < 300
+    )
       return;
     lastChat = Date.now();
     io.to(room).emit('chat', {
@@ -365,6 +432,7 @@ io.on('connection', (s) => {
       text: m.text.slice(0, 2000),
       time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       color: '#c5b6fa',
+      badge: state()?.badgesByIdentity?.get(s.data.identityHash) || '',
     });
   });
   s.on('draw', (data) => {
@@ -380,7 +448,8 @@ io.on('connection', (s) => {
     s.to(room).emit('draw', data);
   });
   s.on('reaction', (data) => {
-    if (room && typeof data === 'string' && data.length <= 32) s.to(room).emit('reaction', data);
+    if (room && !s.data.chatMuted && typeof data === 'string' && data.length <= 32)
+      s.to(room).emit('reaction', data);
   });
   s.on('file-metadata', (data) => {
     if (state() && data && typeof data.name === 'string' && typeof data.hash === 'string')
@@ -407,7 +476,7 @@ io.on('connection', (s) => {
   });
   s.on('share-start', (_, reply) => {
     const r = state();
-    if (!r || (r.locked && r.host !== s.id))
+    if (!r || (r.locked && !canModerate(r, s)))
       return reply?.({ error: 'Only the host can share while controls are locked.' });
     if (r.sharing && r.sharing !== s.id) s.to(room).emit('share-stop');
     r.sharing = s.id;
@@ -428,12 +497,31 @@ io.on('connection', (s) => {
     const r = state();
     if (!r) return;
     r.members.delete(s.id);
+    r.cameras?.delete(s.id);
+    s.to(room).emit('camera-stop', s.id);
+    io.to(room).emit('camera-state', sofaSnapshot(r));
     if (!r.members.size) {
       clearTimeout(r.voteTimer);
-      rooms.delete(room);
+      clearTimeout(r.skipTimer);
+      if (r.persistent) {
+        r.queue = r.queue.filter((item) => item.kind !== 'upload');
+        if (r.sharing || r.state?.source?.startsWith('/api/media/')) r.state = null;
+        else if (r.state) r.state = { ...snapshot(), playing: false };
+        r.sharing = null;
+        r.host = null;
+        roomStore.save(room, r);
+      } else {
+        rooms.delete(room);
+        roomStore.removeAssets(r);
+      }
       media.removeRoom(room);
     } else {
-      if (r.host === s.id) r.host = r.members.keys().next().value;
+      if (r.host === s.id)
+        r.host = r.persistent
+          ? [...r.members.keys()].find((id) =>
+              r.moderators?.has(io.sockets.sockets.get(id)?.data.identityHash),
+            ) || null
+          : r.members.keys().next().value;
       if (r.sharing === s.id) stopScreenShare(room, r);
       update();
     }
@@ -446,5 +534,9 @@ for (const signal of ['SIGINT', 'SIGTERM'])
   process.once(signal, () => {
     io.close();
     http.close();
-    void media.close().finally(() => process.exit(0));
+    for (const [code, room] of rooms) roomStore.save(code, room);
+    void media.close().finally(() => {
+      roomStore.close();
+      process.exit(0);
+    });
   });

@@ -1,0 +1,87 @@
+.seek-wrap {
+  position: relative;
+}
+.seek-preview {
+  position: absolute;
+  bottom: 15px;
+  width: 150px;
+  transform: translateX(-50%);
+  border: 2px solid var(--accent);
+  background: var(--surface-base);
+  box-shadow: 4px 4px 0 var(--shadow);
+  pointer-events: none;
+  z-index: 15;
+}
+.seek-preview video {
+  display: block;
+  width: 146px;
+  height: 82px;
+  object-fit: contain;
+}
+.seek-preview > span {
+  display: block;
+  text-align: center;
+  padding: 4px;
+  font: 10px monospace;
+  color: var(--text-primary);
+}
+.control-deck .boost-button {
+  font: 10px monospace;
+  color: var(--accent-text);
+  min-width: 34px;
+}
+.gif-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 8;
+}
+.gif-overlay {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  max-width: min(240px, 45%);
+  max-height: 45%;
+  border: 3px solid var(--accent);
+  box-shadow: 5px 5px 0 #000;
+  animation: gif-pop 4s both;
+}
+@keyframes gif-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 25px) scale(0.8);
+  }
+  12%,
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -30px) scale(0.95);
+  }
+}
+.gif-choice {
+  position: relative;
+}
+.gif-choice > button:first-child {
+  width: 100%;
+  height: 100%;
+}
+.gif-choice .gif-project {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 4px 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid #000;
+  font: 9px monospace;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gif-overlay {
+    animation: none;
+    transform: translateX(-50%);
+  }
+}

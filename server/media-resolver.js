@@ -47,7 +47,14 @@ export function knownMedia(value) {
   }
   if (host === 'vimeo.com' || host === 'player.vimeo.com') {
     const id = parts.find((part) => /^\d+$/.test(part));
-    if (id) return { url: `https://vimeo.com/${id}`, provider: 'vimeo', mediaType: 'embed' };
+    if (id) {
+      const hash = url.searchParams.get('h') || parts[parts.indexOf(id) + 1];
+      return {
+        url: `https://vimeo.com/${id}${hash && /^[a-z0-9]+$/i.test(hash) ? `?h=${hash}` : ''}`,
+        provider: 'vimeo',
+        mediaType: 'embed',
+      };
+    }
   }
   if (host === 'clips.twitch.tv') {
     const clip = url.searchParams.get('clip') || parts[0];

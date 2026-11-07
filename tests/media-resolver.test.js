@@ -7,6 +7,19 @@ import {
   isPublicAddress,
 } from '../server/media-resolver.js';
 import { twitchSource } from '../src/lib/twitch.ts';
+import { vimeoSource } from '../src/lib/vimeo.ts';
+
+test('Vimeo public, player and unlisted links preserve the access hash without accepting lookalike hosts', () => {
+  for (const url of [
+    'https://vimeo.com/123456/abc123',
+    'https://player.vimeo.com/video/123456?h=abc123',
+  ]) {
+    assert.deepEqual(vimeoSource(url), { id: '123456', hash: 'abc123' });
+    assert.equal(knownMedia(url).url, 'https://vimeo.com/123456?h=abc123');
+  }
+  assert.equal(vimeoSource('https://evilvimeo.com/123456'), null);
+  assert.equal(vimeoSource('/api/media/file'), null);
+});
 
 test('Twitch channel, VOD, clip and old embed links resolve to the same playable source', async () => {
   const cases = [

@@ -45,6 +45,8 @@ export class ScreenPeers {
         };
     };
     connection.onconnectionstatechange = () => {
+      if (this.peers.get(id) === entry && connection.connectionState === 'connected')
+        this.error('');
       if (this.peers.get(id) === entry && connection.connectionState === 'failed') {
         this.error(
           `Screen sharing connection failed (ICE: ${connection.iceConnectionState}). Copy connection details to identify the cause.`,

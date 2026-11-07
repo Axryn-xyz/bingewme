@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { YouTubeController } from './lib/youtube';
 export interface Message {
+  badge?: string;
   id: string;
   name: string;
   text: string;

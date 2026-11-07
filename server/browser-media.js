@@ -169,6 +169,9 @@ async function browserOptions() {
     timeout: 8000,
     args: [
       ...args,
+      ...(process.platform === 'linux' && process.env.PUPPETEER_EXECUTABLE_PATH
+        ? ['--no-sandbox']
+        : []),
       '--proxy-server=http://127.0.0.1:9',
       '--proxy-bypass-list=<-loopback>',
       '--disable-background-networking',

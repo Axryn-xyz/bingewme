@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
+import { canModerate } from './room-store.js';
 
 export function createRoomMedia({ app, io, rooms, publishMedia }) {
   const files = new Map();
@@ -24,7 +25,7 @@ export function createRoomMedia({ app, io, rooms, publishMedia }) {
       room &&
       [...room.members.keys()].find((id) => io.sockets.sockets.get(id)?.data.uploadToken === token);
     if (!member) return res.status(401).json({ error: 'Join this room before uploading a file.' });
-    if (room.locked && room.host !== member)
+    if (room.locked && !canModerate(room, io.sockets.sockets.get(member)))
       return res
         .status(403)
         .json({ error: 'Only the host can add media while controls are locked.' });
@@ -69,7 +70,7 @@ export function createRoomMedia({ app, io, rooms, publishMedia }) {
       if (!size) throw new Error('The selected file is empty.');
       if (rooms.get(req.params.code) !== room || !room.members.has(member))
         throw new Error('The room closed before the upload finished.');
-      if (room.locked && room.host !== member)
+      if (room.locked && !canModerate(room, io.sockets.sockets.get(member)))
         throw new Error('The host locked media controls during this upload.');
       if (room.queue.length >= 100) throw new Error('The room queue is full.');
       const item = {
