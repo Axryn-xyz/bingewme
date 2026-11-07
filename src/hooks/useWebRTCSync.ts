@@ -167,8 +167,11 @@ export function useWebRTCSync(
     if (!connected || !socket.current?.connected)
       throw new Error('Join the room before sharing your screen.');
     const captured = await navigator.mediaDevices.getDisplayMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 60 } },
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60, max: 60 } },
       audio: true,
+    });
+    captured.getVideoTracks().forEach((track) => {
+      track.contentHint = 'motion';
     });
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = captured;
@@ -194,6 +197,7 @@ export function useWebRTCSync(
     broadcast,
     share,
     remoteStream,
+    screenDiagnostics: () => peers.current?.diagnostics(),
     uploadToken,
     addToQueue: (url: string, title: string) =>
       request<{ item: QueueItem }>('queue-add', { url, title }),

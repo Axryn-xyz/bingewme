@@ -1,0 +1,25 @@
+.player-shell:fullscreen,
+.player-shell:-webkit-full-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  background: #000;
+}
+.player-shell:fullscreen .video-stage,
+.player-shell:-webkit-full-screen .video-stage {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+.player-shell:fullscreen .control-deck,
+.player-shell:-webkit-full-screen .control-deck {
+  flex-shrink: 0;
+}
+.fullscreen-error {
+  margin: 5px 0 0;
+  color: var(--danger-text);
+  font-size: 11px;
+}

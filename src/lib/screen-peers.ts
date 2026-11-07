@@ -47,7 +47,7 @@ export class ScreenPeers {
     connection.onconnectionstatechange = () => {
       if (this.peers.get(id) === entry && connection.connectionState === 'failed') {
         this.error(
-          'Screen sharing could not connect across these networks. Configure a TURN relay on the room server, then restart the share.',
+          `Screen sharing connection failed (ICE: ${connection.iceConnectionState}). Copy connection details to identify the cause.`,
         );
       }
     };
@@ -73,11 +73,26 @@ export class ScreenPeers {
       this.send(id, { description: connection.localDescription!.toJSON() });
     });
   }
+  private async tuneVideo(connection: RTCPeerConnection) {
+    for (const sender of connection.getSenders()) {
+      if (sender.track?.kind !== 'video') continue;
+      const parameters = sender.getParameters();
+      if (!parameters.encodings?.length) continue;
+      parameters.degradationPreference = 'maintain-framerate';
+      for (const encoding of parameters.encodings) {
+        encoding.maxFramerate = 60;
+        encoding.maxBitrate = 12_000_000;
+      }
+      // Older Safari versions may reject optional encoder preferences; keep the call alive.
+      await sender.setParameters(parameters).catch(() => {});
+    }
+  }
   signal(id: string, { description, candidate }: ScreenSignal) {
     return this.enqueue(id, async (entry) => {
       const { connection } = entry;
       if (description) {
         await connection.setRemoteDescription(description);
+        if (description.type === 'answer') await this.tuneVideo(connection);
         for (const queued of entry.candidates.splice(0)) await connection.addIceCandidate(queued);
         if (description.type === 'offer') {
           await connection.setLocalDescription(await connection.createAnswer());
@@ -96,6 +111,54 @@ export class ScreenPeers {
       entry.connection.close();
       this.peers.delete(id);
     }
+  }
+  async diagnostics() {
+    const connections = [];
+    for (const { connection } of this.peers.values()) {
+      const counters: Record<string, number | string> = {};
+      try {
+        const stats = await connection.getStats();
+        stats.forEach((report) => {
+          if (report.type === 'local-candidate' || report.type === 'remote-candidate') {
+            const key = `${report.type}:${report.candidateType}`;
+            counters[key] = Number(counters[key] || 0) + 1;
+          }
+          if (report.type === 'transport') counters.dtls = report.dtlsState;
+          if (
+            (report.type === 'inbound-rtp' || report.type === 'outbound-rtp') &&
+            report.kind === 'video'
+          ) {
+            for (const key of [
+              'framesPerSecond',
+              'framesDecoded',
+              'framesEncoded',
+              'bytesReceived',
+              'bytesSent',
+              'qualityLimitationReason',
+            ]) {
+              if (report[key] !== undefined) counters[key] = report[key];
+            }
+          }
+        });
+      } catch {
+        /* A closed connection may no longer expose statistics. */
+      }
+      connections.push({
+        connection: connection.connectionState,
+        ice: connection.iceConnectionState,
+        gathering: connection.iceGatheringState,
+        signaling: connection.signalingState,
+        counters,
+      });
+    }
+    return {
+      browser: navigator.userAgent,
+      relayConfigured: this.iceServers.some(({ urls }) =>
+        [urls].flat().some((url) => /^turns?:/i.test(url)),
+      ),
+      captureFrameRate: this.local?.getVideoTracks()[0]?.getSettings().frameRate,
+      connections,
+    };
   }
   close() {
     this.peers.forEach(({ connection }) => connection.close());

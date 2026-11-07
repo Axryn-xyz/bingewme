@@ -530,6 +530,22 @@ export function WatchRoom({ room, initialName }: { room: string; initialName: st
                         ? 'Tap once to allow playback on this device.'
                         : 'Playing in sync with sound off on this device.')}
                   </span>
+                  {/screen.?shar/i.test(s.mediaError) && (
+                    <button
+                      className="outline-btn"
+                      onClick={async () => {
+                        try {
+                          const details = await sync.screenDiagnostics();
+                          await navigator.clipboard.writeText(JSON.stringify(details, null, 2));
+                          toast('Connection details copied.');
+                        } catch {
+                          toast('Could not copy connection details on this device.');
+                        }
+                      }}
+                    >
+                      Copy connection details
+                    </button>
+                  )}
                   {!s.mediaError && (
                     <button
                       className="outline-btn"

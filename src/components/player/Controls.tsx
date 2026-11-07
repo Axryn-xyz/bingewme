@@ -9,6 +9,9 @@ import {
   SkipForward,
 } from 'lucide-react';
 import { useStore } from '../../store';
+import { useRef, useState } from 'react';
+import { togglePlayerFullscreen } from '../../lib/fullscreen';
+import '../../styles/fullscreen.css';
 export const clock = (n: number) =>
   `${Math.floor((n || 0) / 60)}:${String(Math.floor((n || 0) % 60)).padStart(2, '0')}`;
 export function Controls({
@@ -27,8 +30,10 @@ export function Controls({
   disabled: boolean;
 }) {
   const s = useStore();
+  const deck = useRef<HTMLDivElement>(null);
+  const [fullscreenError, setFullscreenError] = useState('');
   return (
-    <div className="control-deck">
+    <div className="control-deck" ref={deck}>
       <input
         aria-label="Seek video"
         className="seek"
@@ -101,13 +106,27 @@ export function Controls({
         <button
           title="Fullscreen"
           onClick={() => {
-            if (s.controller?.source === s.source) s.controller.requestFullscreen().catch(() => {});
-            else video.current?.parentElement?.requestFullscreen?.().catch(() => {});
+            setFullscreenError('');
+            try {
+              togglePlayerFullscreen(
+                deck.current?.closest<HTMLElement>('.player-shell') || null,
+                video.current,
+              ).catch((error: Error) => setFullscreenError(error.message));
+            } catch (error) {
+              setFullscreenError(
+                error instanceof Error ? error.message : 'Fullscreen could not start.',
+              );
+            }
           }}
         >
           <Maximize size={18} />
         </button>
       </div>
+      {fullscreenError && (
+        <p className="fullscreen-error" role="status">
+          {fullscreenError}
+        </p>
+      )}
     </div>
   );
 }
